@@ -1,10 +1,10 @@
-# despiece_pro/main.rb
-# Logica principal del plugin Despiece PRO
+# despiece_pro_v2/main.rb
+# Logica principal del plugin Despiece PRO v2
 
 require 'json'
 
 module BiraEstudio
-  module DespiecePro
+  module DespieceProV2
     PLUGIN_DIR = File.expand_path(File.dirname(__FILE__)).freeze
 
     module DimHelpers
@@ -60,9 +60,9 @@ module BiraEstudio
       @color_names = {}
       @canto_config = {}
       @open_module_uids = []
-      SCAN_MATERIAL_NAME = 'DespiecePRO_escaneado'.freeze
+      SCAN_MATERIAL_NAME = 'DespiecePROv2_escaneado'.freeze
       DEFAULT_BADGE_COLOR = '#ff941f'.freeze
-      ATTRIBUTE_DICT = 'despiece_pro'.freeze
+      ATTRIBUTE_DICT = 'despiece_pro_v2'.freeze
       ATTRIBUTE_KEY = 'data'.freeze
       MODULE_UID_KEY = 'uid'.freeze
 
@@ -464,7 +464,7 @@ module BiraEstudio
         def refresh_all_modules
           model = Sketchup.active_model
           uid_map = build_uid_entity_map(model)
-          scanner = BiraEstudio::DespiecePro::ScanModuleTool.new
+          scanner = BiraEstudio::DespieceProV2::ScanModuleTool.new
           report = { added: [], removed: [], changed: [] }
 
           dim_key_no_color = lambda do |length, width, thickness|
@@ -569,7 +569,7 @@ module BiraEstudio
 
           raw = model.get_attribute(ATTRIBUTE_DICT, ATTRIBUTE_KEY)
           if raw.nil? || raw.to_s.strip.empty?
-            puts 'Despiece PRO: sin datos guardados en despiece_pro/data'
+            puts 'Despiece PRO v2: sin datos guardados en despiece_pro_v2/data'
             return 0
           end
 
@@ -929,7 +929,7 @@ module BiraEstudio
             return false
           end
 
-          json_path = File.join(Dir.tmpdir, "despiece_pro_export_#{Time.now.to_i}_#{rand(1000)}.json")
+          json_path = File.join(Dir.tmpdir, "despiece_pro_v2_export_#{Time.now.to_i}_#{rand(1000)}.json")
           json_content = JSON.generate(Store.export_payload)
           File.open(json_path, 'wb') do |handle|
             handle.write(json_content)
@@ -971,7 +971,7 @@ module BiraEstudio
     end
 
     class ExtraDialog
-      DIALOG_KEY = 'despiece_pro_extra'.freeze
+      DIALOG_KEY = 'despiece_pro_v2_extra'.freeze
 
       class << self
         def show(uid, dim_key)
@@ -1033,7 +1033,7 @@ module BiraEstudio
     end
 
     class InfoDialog
-      DIALOG_KEY = 'despiece_pro_info'.freeze
+      DIALOG_KEY = 'despiece_pro_v2_info'.freeze
 
       class << self
         def show
@@ -1244,7 +1244,7 @@ module BiraEstudio
     end
 
     class ListDialog
-      DIALOG_KEY = 'despiece_pro_list'.freeze
+      DIALOG_KEY = 'despiece_pro_v2_list'.freeze
 
       class << self
         def toggle
@@ -1319,7 +1319,7 @@ module BiraEstudio
           @dialog ||= build_dialog
           apply_list_html
           @dialog.show
-          Sketchup.status_text = "Despiece PRO: #{restored} modulos restaurados" if restored > 0
+          Sketchup.status_text = "Despiece PRO v2: #{restored} modulos restaurados" if restored > 0
         end
 
         def apply_list_html
@@ -1347,7 +1347,7 @@ module BiraEstudio
 
         def build_dialog
           dialog = UI::HtmlDialog.new(
-            dialog_title: 'Despiece PRO - Lista de piezas',
+            dialog_title: 'Despiece PRO v2 - Lista de piezas',
             preferences_key: DIALOG_KEY,
             scrollable: true,
             resizable: true,
@@ -1670,11 +1670,11 @@ module BiraEstudio
     end
 
     unless file_loaded?(__FILE__)
-      toolbar = UI::Toolbar.new('Despiece PRO')
-      menu = UI.menu('Extensions').add_submenu('Despiece PRO')
+      toolbar = UI::Toolbar.new('Despiece PRO v2')
+      menu = UI.menu('Extensions').add_submenu('Despiece PRO v2')
 
       cmd_scan = UI::Command.new('Escanear Modulo') do
-        Sketchup.active_model.select_tool(BiraEstudio::DespiecePro::ScanModuleTool.new)
+        Sketchup.active_model.select_tool(BiraEstudio::DespieceProV2::ScanModuleTool.new)
       end
       cmd_scan.small_icon = File.join(PLUGIN_DIR, 'icons', 'scan_small.png')
       cmd_scan.large_icon = File.join(PLUGIN_DIR, 'icons', 'scan_large.png')
@@ -1685,7 +1685,7 @@ module BiraEstudio
       menu.add_item(cmd_scan)
 
       cmd_list = UI::Command.new('Ver Lista') do
-        BiraEstudio::DespiecePro::ListDialog.toggle
+        BiraEstudio::DespieceProV2::ListDialog.toggle
       end
       cmd_list.small_icon = File.join(PLUGIN_DIR, 'icons', 'list_small.png')
       cmd_list.large_icon = File.join(PLUGIN_DIR, 'icons', 'list_large.png')

@@ -3,7 +3,7 @@ import os
 import re
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIALOG = os.path.join(REPO_ROOT, 'despiece_pro', 'dialog.html')
+DIALOG = os.path.join(REPO_ROOT, 'despiece_pro_v2', 'dialog.html')
 
 SAMPLE_CONTENT = (
     '<div class="module" data-entity-id="12345">'

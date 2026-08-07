@@ -6,12 +6,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def read_version():
-    registrator = os.path.join(REPO_ROOT, 'despiece_pro.rb')
+    registrator = os.path.join(REPO_ROOT, 'despiece_pro_v2.rb')
     with open(registrator, encoding='utf-8') as handle:
         content = handle.read()
     match = re.search(r"EXTENSION\.version\s*=\s*'([^']+)'", content)
     if not match:
-        raise SystemExit('No se pudo leer EXTENSION.version de despiece_pro.rb')
+        raise SystemExit('No se pudo leer EXTENSION.version de despiece_pro_v2.rb')
     return match.group(1)
 
 
@@ -19,20 +19,20 @@ def build_rbz():
     version = read_version()
     output_dir = os.path.join(REPO_ROOT, 'instalable')
     os.makedirs(output_dir, exist_ok=True)
-    output = os.path.join(output_dir, f'DespiecePRO_v{version}.rbz')
+    output = os.path.join(output_dir, f'DespiecePROv2_v{version}.rbz')
 
     files = [
-        ('despiece_pro.rb', 'despiece_pro.rb'),
-        ('despiece_pro/main.rb', 'despiece_pro/main.rb'),
-        ('despiece_pro/dialog.html', 'despiece_pro/dialog.html'),
-        ('despiece_pro/extra_dialog.html', 'despiece_pro/extra_dialog.html'),
-        ('despiece_pro/info_dialog.html', 'despiece_pro/info_dialog.html'),
-        ('despiece_pro/export_excel.py', 'despiece_pro/export_excel.py'),
-        ('despiece_pro/export_cortecloud.py', 'despiece_pro/export_cortecloud.py'),
-        ('despiece_pro/icons/scan_small.png', 'despiece_pro/icons/scan_small.png'),
-        ('despiece_pro/icons/scan_large.png', 'despiece_pro/icons/scan_large.png'),
-        ('despiece_pro/icons/list_small.png', 'despiece_pro/icons/list_small.png'),
-        ('despiece_pro/icons/list_large.png', 'despiece_pro/icons/list_large.png'),
+        ('despiece_pro_v2.rb', 'despiece_pro_v2.rb'),
+        ('despiece_pro_v2/main.rb', 'despiece_pro_v2/main.rb'),
+        ('despiece_pro_v2/dialog.html', 'despiece_pro_v2/dialog.html'),
+        ('despiece_pro_v2/extra_dialog.html', 'despiece_pro_v2/extra_dialog.html'),
+        ('despiece_pro_v2/info_dialog.html', 'despiece_pro_v2/info_dialog.html'),
+        ('despiece_pro_v2/export_excel.py', 'despiece_pro_v2/export_excel.py'),
+        ('despiece_pro_v2/export_cortecloud.py', 'despiece_pro_v2/export_cortecloud.py'),
+        ('despiece_pro_v2/icons/scan_small.png', 'despiece_pro_v2/icons/scan_small.png'),
+        ('despiece_pro_v2/icons/scan_large.png', 'despiece_pro_v2/icons/scan_large.png'),
+        ('despiece_pro_v2/icons/list_small.png', 'despiece_pro_v2/icons/list_small.png'),
+        ('despiece_pro_v2/icons/list_large.png', 'despiece_pro_v2/icons/list_large.png'),
     ]
 
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zf:

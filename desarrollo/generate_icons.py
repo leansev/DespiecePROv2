@@ -76,7 +76,7 @@ def draw_list(size):
 
 
 def main():
-    base = os.path.join(REPO_ROOT, 'despiece_pro', 'icons')
+    base = os.path.join(REPO_ROOT, 'despiece_pro_v2', 'icons')
     os.makedirs(base, exist_ok=True)
 
     specs = [
