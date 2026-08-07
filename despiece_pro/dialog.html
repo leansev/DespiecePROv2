@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Despiece PRO</title>
+
+<style>
+
+html,
+body{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:#1a2a4a;
+    font-family:"Segoe UI", Arial, sans-serif;
+    color:#eef3ff;
+    overflow:hidden;
+}
+
+#app{
+    width:100%;
+    height:100%;
+    background:#1a2a4a;
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:12px;
+    overflow:auto;
+    box-sizing:border-box;
+}
+
+.top-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 10px 0 10px;
+}
+.top-bar-btn {
+  flex: 1;
+  padding: 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: #eef3ff;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+}
+.top-bar-btn:hover {
+  background: rgba(255,255,255,0.14);
+}
+
+/* ==========================================
+   MÓDULOS
+========================================== */
+
+.module{
+    margin:8px 10px;
+    margin-bottom:10px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:8px;
+    overflow:hidden;
+}
+
+.module:first-child{
+    border-top:none;
+}
+
+.module-header{
+    display:flex;
+    align-items:center;
+    padding:8px 12px;
+    min-height:34px;
+    cursor:pointer;
+}
+
+.module-body{
+    display:none;
+}
+
+.module.open .module-body{
+    display:block;
+}
+
+.module-header-left{
+    display:flex;
+    align-items:center;
+    flex:1;
+    min-width:0;
+}
+
+.module-code{
+    font-size:16px;
+    font-weight:700;
+    line-height:1;
+}
+
+.module-separator{
+    margin:0 14px;
+    color:rgba(255,255,255,.85);
+    font-size:18px;
+}
+
+.module-name{
+    flex:1;
+    font-size:14px;
+    font-weight:500;
+    color:#eef3ff;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.module-pieces-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 12px 6px 12px;
+}
+
+.module-pieces{
+    color:#ffd54a;
+    font-size:15px;
+    font-weight:600;
+    white-space:nowrap;
+}
+
+.delete-btn{
+    border:none;
+    background:none;
+    color:#dbe4f2;
+    cursor:pointer;
+    font-size:16px;
+    padding:0;
+    line-height:1;
+}
+
+.delete-btn:hover{
+    color:#ffffff;
+}
+
+.edit-btn{
+    border:none;
+    background:none;
+    color:#ffffff;
+    font-size:16px;
+    cursor:pointer;
+    padding:0;
+    width:20px;
+    height:20px;
+    line-height:20px;
+    text-align:center;
+    flex-shrink:0;
+    margin-left:auto;
+}
+
+.edit-btn:hover{
+    opacity:.9;
+}
+
+/* ==========================================
+   FILAS
+========================================== */
+
+.piece-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:6px 12px;
+    border-top:1px solid rgba(255,255,255,.08);
+    white-space:nowrap;
+}
+
+.color-chip{
+    width:14px;
+    height:14px;
+    border:1px solid rgba(255,255,255,.35);
+    border-radius:3px;
+    flex-shrink:0;
+    box-sizing:border-box;
+    margin-right:10px;
+}
+
+.qty{
+    font-family:Consolas, monospace;
+    font-size:14px;
+    font-weight:500;
+    width:34px;
+    flex-shrink:0;
+}
+
+.dimensions{
+    font-family:Consolas, monospace;
+    font-size:14px;
+    font-weight:500;
+    color:#f1f4fa;
+    width:clamp(150px, 42vw, 230px);
+    flex-shrink:1;
+}
+
+.badge{
+    display:inline-block;
+    min-width:28px;
+    text-align:center;
+    padding:1px 5px;
+    margin-left:12px;
+    margin-right:12px;
+    border-radius:4px;
+    border:1px solid currentColor;
+    font-size:10px;
+    font-weight:600;
+    background:rgba(255,255,255,.02);
+}
+
+.piece-name{
+    color:#dbe4f2;
+    font-size:13px;
+    font-weight:400;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.extra-btn{
+    margin-left:auto;
+    flex-shrink:0;
+    cursor:pointer;
+}
+.canto-preview{
+    width:18px;
+    height:18px;
+    box-sizing:border-box;
+    border-style:solid;
+    border-width:3px;
+    background:rgba(255,255,255,.06);
+}
+.canto-preview:hover{
+    background:rgba(255,255,255,.14);
+}
+
+/* ==========================================
+   EDICIÓN
+========================================== */
+
+.module.editing .module-name,
+.module.editing .piece-name{
+    background:rgba(255,255,255,.08);
+    border-radius:4px;
+    padding:2px 6px;
+}
+
+[contenteditable="true"]{
+    outline:none;
+}
+
+/* ==========================================
+   FOOTER
+========================================== */
+
+.footer{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    padding:10px 14px;
+
+    border-top:1px solid rgba(255,255,255,.08);
+}
+
+.total{
+    color:#ffd54a;
+    font-size:14px;
+    font-weight:600;
+}
+
+.footer-actions{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:6px;
+}
+
+.export-btn{
+    background:none;
+    border:1px solid rgba(255,255,255,.25);
+    color:#dbe4f2;
+    cursor:pointer;
+    font-size:13px;
+    padding:4px 10px;
+    border-radius:4px;
+}
+
+.export-btn:hover{
+    color:#ffffff;
+    border-color:rgba(255,255,255,.45);
+}
+
+
+@media (max-width:520px){
+    .module{
+        margin:6px 8px;
+    }
+
+    .module-header{
+        padding:7px 10px;
+    }
+
+    .piece-row{
+        gap:8px;
+        padding:5px 10px;
+    }
+
+    .qty{
+        width:28px;
+        font-size:13px;
+    }
+
+    .dimensions{
+        width:clamp(135px, 45vw, 190px);
+        font-size:13px;
+    }
+
+    .badge{
+        min-width:24px;
+        padding:1px 4px;
+        margin-left:8px;
+        margin-right:8px;
+        font-size:9px;
+    }
+
+    .piece-name{
+        font-size:12px;
+    }
+
+    .footer{
+        padding:9px 12px;
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="app">
+
+    <div class="top-bar">
+      <button class="top-bar-btn" onclick="refreshAll();">🔄 Refresh</button>
+      <button class="top-bar-btn" onclick="openInfo();">ℹ Info Placas</button>
+    </div>
+
+    %CONTENT%
+
+    <div class="footer">
+        <div class="total">
+            TOTAL: %TOTAL% piezas
+        </div>
+        <div class="footer-actions">
+            <button class="export-btn" onclick="exportExcel();">
+                📊 Exportar Excel
+            </button>
+            <button class="export-btn" onclick="saveState();">
+                💾 Guardar
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+
+(function(){
+
+    var app = document.getElementById('app');
+
+    if(app){
+        var savedScroll = window.__scrollTop || 0;
+        if(savedScroll > 0){
+            app.scrollTop = savedScroll;
+        }
+        app.addEventListener('scroll', function(){
+            window.__scrollTop = app.scrollTop;
+        });
+    }
+
+    function findParentByClass(el, className){
+        while(el && el !== document.body){
+            if(el.classList && el.classList.contains(className)){
+                return el;
+            }
+            el = el.parentNode;
+        }
+        return null;
+    }
+
+
+    function bindClearDefaultText(module){
+
+        var names =
+            module.querySelectorAll('.module-name');
+
+        for(var i=0;i<names.length;i++){
+
+            names[i].onfocus = function(){
+
+                var editing =
+                    module.getAttribute('data-editing') === 'true';
+
+                if(!editing){
+                    return;
+                }
+
+                var text = trim(this.innerText).toLowerCase();
+
+                if(
+                    text === 'grupo sin nombre' ||
+                    text === 'grupo sin nombre.' ||
+                    text === 'sin nombre'
+                ){
+                    this.innerText = '';
+                }
+            };
+        }
+    }
+
+    function enableEdit(module){
+
+        module.setAttribute('data-editing','true');
+        module.className += ' editing';
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(moduleName){
+
+            moduleName.contentEditable = true;
+            moduleName.focus();
+
+            var t = trim(moduleName.innerText).toLowerCase();
+
+            if(
+                t === 'grupo sin nombre' ||
+                t === 'grupo sin nombre.' ||
+                t === 'sin nombre'
+            ){
+                moduleName.innerText = '';
+            }
+        }
+
+        var pieces =
+            module.querySelectorAll('.piece-name');
+
+        for(var i=0;i<pieces.length;i++){
+
+            pieces[i].contentEditable = true;
+        }
+    }
+
+    function disableEdit(module){
+
+        module.setAttribute('data-editing','false');
+
+        module.className =
+            module.className.replace(' editing','');
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(moduleName){
+
+            moduleName.contentEditable = false;
+        }
+
+        var pieces =
+            module.querySelectorAll('.piece-name');
+
+        for(var i=0;i<pieces.length;i++){
+
+            pieces[i].contentEditable = false;
+        }
+    }
+
+    function saveModuleNameToStore(module){
+
+        var entityId =
+            module.getAttribute('data-entity-id');
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(
+            window.sketchup &&
+            sketchup.update_module_name &&
+            moduleName
+        ){
+            sketchup.update_module_name(
+                entityId,
+                trim(moduleName.innerText)
+            );
+        }
+    }
+
+    function savePieceNameToStore(module, row){
+
+        var entityId =
+            module.getAttribute('data-entity-id');
+
+        var dimKey =
+            row.getAttribute('data-dim-key');
+
+        var pieceName =
+            row.querySelector('.piece-name');
+
+        if(
+            window.sketchup &&
+            sketchup.update_piece_name &&
+            pieceName
+        ){
+            sketchup.update_piece_name(
+                entityId,
+                dimKey,
+                trim(pieceName.innerText)
+            );
+        }
+    }
+
+    function flushModuleToStore(module){
+
+        saveModuleNameToStore(module);
+
+        var rows =
+            module.querySelectorAll('.piece-row');
+
+        for(var i=0;i<rows.length;i++){
+            savePieceNameToStore(module, rows[i]);
+        }
+    }
+
+    function flushAllEditingModules(){
+
+        var modules =
+            document.querySelectorAll('.module[data-editing="true"]');
+
+        for(var i=0;i<modules.length;i++){
+            flushModuleToStore(modules[i]);
+        }
+    }
+
+    function bindAutoSave(module){
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(moduleName){
+
+            moduleName.onblur = function(){
+
+                if(module.getAttribute('data-editing') !== 'true'){
+                    return;
+                }
+
+                saveModuleNameToStore(module);
+            };
+        }
+
+        var rows =
+            module.querySelectorAll('.piece-row');
+
+        for(var i=0;i<rows.length;i++){
+
+            (function(row){
+
+                var pieceName =
+                    row.querySelector('.piece-name');
+
+                if(!pieceName){
+                    return;
+                }
+
+                pieceName.onblur = function(){
+
+                    if(module.getAttribute('data-editing') !== 'true'){
+                        return;
+                    }
+
+                    savePieceNameToStore(module, row);
+                };
+
+            })(rows[i]);
+        }
+    }
+
+    function closeEditingModule(module){
+
+        flushModuleToStore(module);
+        disableEdit(module);
+
+        var btn =
+            module.querySelector('.edit-btn');
+
+        if(btn){
+            btn.innerHTML = '&#9998;';
+        }
+
+        if(window.sketchup && sketchup.refresh_list){
+            sketchup.refresh_list();
+        }
+    }
+
+    function closeOtherEditingModules(currentModule){
+
+        var modules =
+            document.querySelectorAll('.module[data-editing="true"]');
+
+        for(var i=0;i<modules.length;i++){
+
+            if(modules[i] !== currentModule){
+                closeEditingModule(modules[i]);
+            }
+        }
+    }
+
+    function trim(str){
+
+        return String(str)
+            .replace(/^\s+/,'')
+            .replace(/\s+$/,'');
+    }
+
+    window.clearList = function(){
+
+        if(
+            window.sketchup &&
+            sketchup.clear_list
+        ){
+            sketchup.clear_list();
+        }
+    };
+
+    window.exportExcel = function(){
+
+        flushAllEditingModules();
+
+        if(
+            window.sketchup &&
+            sketchup.export_excel
+        ){
+            sketchup.export_excel();
+        }
+    };
+
+    window.saveState = function(){
+
+        flushAllEditingModules();
+
+        if(
+            window.sketchup &&
+            sketchup.save_state
+        ){
+            sketchup.save_state();
+        }
+    };
+
+    window.openInfo = function(){
+        if(window.sketchup && sketchup.open_info){
+            sketchup.open_info();
+        }
+    };
+
+    window.refreshAll = function(){
+        if(window.sketchup && sketchup.refresh_all){
+            sketchup.refresh_all();
+        }
+    };
+
+    document.addEventListener('click', function(e){
+
+        var extraBtn = findParentByClass(e.target, 'extra-btn');
+
+        if(extraBtn){
+
+            var uid =
+                extraBtn.getAttribute('data-uid');
+
+            var dimKey =
+                extraBtn.getAttribute('data-dim-key');
+
+            if(
+                window.sketchup &&
+                sketchup.open_extra
+            ){
+                sketchup.open_extra(uid, dimKey);
+            }
+
+            return;
+        }
+
+        var deleteBtn = findParentByClass(e.target, 'delete-btn');
+
+        if(deleteBtn){
+
+            var moduleEl = findParentByClass(deleteBtn, 'module');
+
+            if(!moduleEl){
+                return;
+            }
+
+            var entityId =
+                moduleEl.getAttribute('data-entity-id');
+
+            if(!confirm('¿Eliminar este módulo?')){
+                return;
+            }
+
+            flushAllEditingModules();
+
+            if(
+                window.sketchup &&
+                sketchup.remove_module
+            ){
+                sketchup.remove_module(entityId);
+            }
+
+            return;
+        }
+
+        var btn = findParentByClass(e.target, 'edit-btn');
+
+        if(!btn){
+            return;
+        }
+
+        var module = findParentByClass(btn, 'module');
+
+        if(!module){
+            return;
+        }
+
+        var editing =
+            module.getAttribute('data-editing') === 'true';
+
+        if(editing){
+
+            closeEditingModule(module);
+
+        }else{
+
+            closeOtherEditingModules(module);
+            bindClearDefaultText(module);
+            bindAutoSave(module);
+            enableEdit(module);
+            btn.innerHTML = '✓';
+
+        }
+
+    }, false);
+
+    var moduleHeaders = document.querySelectorAll('.module-header');
+    var h;
+    for(h = 0; h < moduleHeaders.length; h++){
+        (function(header){
+            header.addEventListener('click', function(e){
+                var target = e.target;
+                while(target && target !== header){
+                    if(target.classList && target.classList.contains('edit-btn')){
+                        return;
+                    }
+                    target = target.parentNode;
+                }
+                var module = findParentByClass(header, 'module');
+                if(module){
+                    module.classList.toggle('open');
+                    var isOpen = module.classList.contains('open');
+                    if(window.sketchup && sketchup.set_module_open){
+                        sketchup.set_module_open(module.getAttribute('data-entity-id'), isOpen ? '1' : '0');
+                    }
+                }
+            });
+        })(moduleHeaders[h]);
+    }
+
+})();
+
+</script>
+
+</body>
+</html>

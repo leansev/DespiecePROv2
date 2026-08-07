@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Tapacantos</title>
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;background:#1a2a4a;font-family:"Segoe UI",Arial,sans-serif;color:#eef3ff;overflow:hidden;}
+#app{width:100%;height:100%;background:#1a2a4a;border:1px solid rgba(255,255,255,.14);border-radius:12px;box-sizing:border-box;overflow:hidden;}
+.header{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.10);}
+.title{font-size:19px;font-weight:500;}
+.content{padding:12px 16px 8px 16px;}
+.info{border:1px solid rgba(96,165,250,.45);background:rgba(96,165,250,.10);color:#b9dcff;border-radius:5px;padding:8px 11px;font-size:13px;margin-bottom:10px;}
+.diagram-wrap{width:100%;text-align:center;padding:2px 0 6px 0;}
+
+.board{border-collapse:separate;border-spacing:0;width:258px;table-layout:fixed;margin:0 auto;background:transparent;}
+.board td{padding:0;vertical-align:middle;text-align:center;}
+.board .w-side{width:54px;}
+.board .w-center{width:150px;}
+.board .h-top{height:38px;}
+.board .h-mid{height:85px;}
+.board .h-bot{height:38px;}
+
+.cell{position:relative;background:rgba(255,255,255,.78);box-sizing:border-box;cursor:pointer;user-select:none;color:#333;overflow:hidden;}
+.center{background:#fff;cursor:default;}
+
+/* Líneas base dibujadas una sola vez por borde: evita dobles líneas en IE11 */
+.corner-tl,.edge-top,.corner-tr{border-top:1px dashed rgba(35,35,35,.85);}
+.corner-tl,.edge-left,.corner-bl{border-left:1px dashed rgba(35,35,35,.85);}
+.corner-tr,.edge-right,.corner-br{border-right:1px dashed rgba(35,35,35,.85);}
+.corner-bl,.edge-bottom,.corner-br{border-bottom:1px dashed rgba(35,35,35,.85);}
+
+.corner-tl,.edge-left,.corner-bl{border-right:1px dashed rgba(35,35,35,.85);}
+.edge-top,.center,.edge-bottom{border-right:1px dashed rgba(35,35,35,.85);}
+.corner-tl,.edge-top,.corner-tr{border-bottom:1px dashed rgba(35,35,35,.85);}
+.edge-left,.center,.edge-right{border-bottom:1px dashed rgba(35,35,35,.85);}
+
+.edge{font-size:11px;color:#333;text-align:center;}
+.edge-inner{display:block;width:100%;}
+.edge .big{font-size:14px;font-weight:500;display:block;margin-top:1px;line-height:1.1;}
+.left-text,.right-text{writing-mode:tb-rl;-ms-writing-mode:tb-rl;text-orientation:mixed;font-size:10px;margin:0 auto;}
+.left-text{filter:progid:DXImageTransform.Microsoft.BasicImage(rotation=2);}
+.edge-top div,.edge-bottom div{max-width:90px;margin:auto;}
+.edge-top u,.edge-bottom u{font-size:10px;}
+
+/* Selección exterior: gana sobre la línea base */
+.board.edge-arr-1 .corner-tl,.board.edge-arr-1 .edge-top,.board.edge-arr-1 .corner-tr{border-top:3px solid #ff1d1d !important;}
+.board.edge-arr-2 .corner-tl,.board.edge-arr-2 .edge-top,.board.edge-arr-2 .corner-tr{border-top:3px solid #1d35ff !important;}
+.board.edge-aba-1 .corner-bl,.board.edge-aba-1 .edge-bottom,.board.edge-aba-1 .corner-br{border-bottom:3px solid #ff1d1d !important;}
+.board.edge-aba-2 .corner-bl,.board.edge-aba-2 .edge-bottom,.board.edge-aba-2 .corner-br{border-bottom:3px solid #1d35ff !important;}
+.board.edge-izq-1 .corner-tl,.board.edge-izq-1 .edge-left,.board.edge-izq-1 .corner-bl{border-left:3px solid #ff1d1d !important;}
+.board.edge-izq-2 .corner-tl,.board.edge-izq-2 .edge-left,.board.edge-izq-2 .corner-bl{border-left:3px solid #1d35ff !important;}
+.board.edge-der-1 .corner-tr,.board.edge-der-1 .edge-right,.board.edge-der-1 .corner-br{border-right:3px solid #ff1d1d !important;}
+.board.edge-der-2 .corner-tr,.board.edge-der-2 .edge-right,.board.edge-der-2 .corner-br{border-right:3px solid #1d35ff !important;}
+
+.footer{border-top:1px solid rgba(255,255,255,.10);padding:11px 16px;display:flex;align-items:center;justify-content:space-between;}
+.legend{display:block;min-width:180px;}
+.legend-item{position:relative;padding-left:28px;font-size:13px;min-height:30px;margin-bottom:6px;}
+.swatch{position:absolute;left:0;top:8px;width:18px;height:3px;}
+.red{background:#ff1d1d;}.blue{background:#1d35ff;}
+.legend-title{font-weight:600;color:#eef3ff;}
+.legend-sub{display:block;color:#c1cada;font-size:12px;}
+.measure{margin-left:auto;min-width:170px;}
+.measure-title{font-weight:700;font-size:14px;}
+.measure-sub{color:#c1cada;font-size:12px;margin-top:4px;}
+.measure-value{font-weight:700;font-size:14px;margin-top:10px;}
+.finish{background:rgba(66,153,225,.24);border:1px solid rgba(96,165,250,.58);color:#c8e4ff;border-radius:5px;padding:9px 22px;font-size:14px;cursor:pointer;}
+.finish:hover{background:rgba(66,153,225,.34);}
+</style>
+</head>
+<body>
+<div id="app">
+    <div class="header"><div class="title">Tapacantos</div></div>
+    <div class="content">
+        <div class="info">Haga un click en el canto para seleccionar el tapacanto 1 o dos para el tapacanto 2.</div>
+        <div class="diagram-wrap">
+            <table class="board" id="board" cellspacing="0" cellpadding="0">
+                <colgroup>
+                    <col class="w-side">
+                    <col class="w-center">
+                    <col class="w-side">
+                </colgroup>
+                <tr class="h-top">
+                    <td class="cell corner corner-tl w-side h-top" data-corner="tl"></td>
+                    <td class="cell edge edge-top w-center h-top" data-edge="arr"><span class="edge-inner"><u>Canto Superior</u><span class="big" id="label-largo">%LARGO% mm</span></span></td>
+                    <td class="cell corner corner-tr w-side h-top" data-corner="tr"></td>
+                </tr>
+                <tr class="h-mid">
+                    <td class="cell edge edge-left w-side h-mid" data-edge="izq"><span class="edge-inner left-text">Canto Izquierdo</span></td>
+                    <td class="cell center w-center h-mid" title="%NOMBRE_PIEZA%"></td>
+                    <td class="cell edge edge-right w-side h-mid" data-edge="der"><span class="edge-inner right-text"><span class="big" id="label-ancho">%ANCHO% mm</span>Canto Derecho</span></td>
+                </tr>
+                <tr class="h-bot">
+                    <td class="cell corner corner-bl w-side h-bot" data-corner="bl"></td>
+                    <td class="cell edge edge-bottom w-center h-bot" data-edge="aba"><span class="edge-inner"><u>Canto Inferior</u></span></td>
+                    <td class="cell corner corner-br w-side h-bot" data-corner="br"></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    <div class="footer">
+        <div class="legend">
+            <div class="legend-item"><div class="swatch red"></div><div class="legend-title">Tapacanto 1</div><span class="legend-sub">PVC BLANCO 0.45mm</span></div>
+            <div class="legend-item"><div class="swatch blue"></div><div class="legend-title">Tapacanto 2</div><span class="legend-sub">PVC BLANCO 0.45mm</span></div>
+        </div>
+        <div class="measure">
+            <div class="measure-title">Medida Real</div>
+            <div class="measure-sub">(medida de la pieza)</div>
+            <div class="measure-value" id="measure-value"></div>
+        </div>
+        <button class="finish" onclick="finishDialog();">Terminar</button>
+    </div>
+</div>
+<script>
+(function(){
+    "use strict";
+    var CANTO_MM=0.45;
+    var largo=parseFloat("%LARGO%");
+    var ancho=parseFloat("%ANCHO%");
+    var espesor=parseFloat("%ESPESOR%");
+    var state={arr:parseInt("%CANTO_ARR%",10)||0,aba:parseInt("%CANTO_ABA%",10)||0,izq:parseInt("%CANTO_IZQ%",10)||0,der:parseInt("%CANTO_DER%",10)||0};
+    function bySelector(s){return document.querySelector(s);}
+    function bySelectorAll(s){return document.querySelectorAll(s);}
+    function normalizeState(v){v=parseInt(v,10);if(v===1||v===2){return v;}return 0;}
+    function nextCycle(v){if(v===0){return 1;}if(v===1){return 2;}return 0;}
+    function nextCorner(v){return nextCycle(v);}
+    function clearBoardClasses(b){var n=["edge-arr-1","edge-arr-2","edge-aba-1","edge-aba-2","edge-izq-1","edge-izq-2","edge-der-1","edge-der-2"];var i;for(i=0;i<n.length;i++){b.className=b.className.replace(" "+n[i],"");}}
+    function applyBoardClass(b,e){var v=normalizeState(state[e]);if(v===1){b.className+=" edge-"+e+"-1";}if(v===2){b.className+=" edge-"+e+"-2";}}
+    function formatNumber(num){var r=Math.round(num*100)/100;if(Math.abs(r-Math.round(r))<0.001){return String(Math.round(r));}return String(r).replace(".",",");}
+    function updateMeasure(){bySelector("#measure-value").innerHTML=formatNumber(largo)+" mm x "+formatNumber(ancho)+" mm";}
+    function render(){var b=bySelector("#board");clearBoardClasses(b);applyBoardClass(b,"arr");applyBoardClass(b,"aba");applyBoardClass(b,"izq");applyBoardClass(b,"der");updateMeasure();}
+    function bindEdges(){var e=bySelectorAll("[data-edge]");var i;for(i=0;i<e.length;i++){e[i].onclick=function(){var n=this.getAttribute("data-edge");state[n]=nextCycle(state[n]);render();};}}
+    function bindCorners(){var c=bySelectorAll("[data-corner]");var i;for(i=0;i<c.length;i++){c[i].onclick=function(){var x=this.getAttribute("data-corner");if(x==="tl"){state.arr=nextCorner(state.arr);state.izq=nextCorner(state.izq);}if(x==="tr"){state.arr=nextCorner(state.arr);state.der=nextCorner(state.der);}if(x==="bl"){state.aba=nextCorner(state.aba);state.izq=nextCorner(state.izq);}if(x==="br"){state.aba=nextCorner(state.aba);state.der=nextCorner(state.der);}render();};}}
+    window.finishDialog=function(){if(window.sketchup&&sketchup.save_cantos){sketchup.save_cantos(state.arr,state.aba,state.izq,state.der);}window.close();};
+    state.arr=normalizeState(state.arr);state.aba=normalizeState(state.aba);state.izq=normalizeState(state.izq);state.der=normalizeState(state.der);
+    bindEdges();bindCorners();render();
+})();
+</script>
+</body>
+</html>

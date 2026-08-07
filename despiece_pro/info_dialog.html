@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Info de placas</title>
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;background:#1a2a4a;font-family:"Segoe UI",Arial,sans-serif;color:#eef3ff;overflow:hidden;}
+#app{width:100%;height:100%;background:#1a2a4a;border:1px solid rgba(255,255,255,.14);border-radius:12px;box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;}
+.header{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.10);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
+.title{font-size:19px;font-weight:500;}
+.icon-btn{border:none;background:transparent;color:#eef3ff;font-size:18px;cursor:pointer;padding:0;line-height:1;}
+.icon-btn:hover{color:#ffffff;}
+.content{padding:12px 16px;flex:1;overflow:auto;}
+.placa-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.placa-row.similar { border: 1px solid #ffd54a; border-radius:4px; }
+.placa-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
+.color-box{width:16px;height:16px;border:1px solid rgba(255,255,255,.35);border-radius:3px;flex-shrink:0;box-sizing:border-box;}
+.placa-info{min-width:100px;flex-shrink:0;}
+.placa-label{font-size:14px;font-weight:500;color:#f1f4fa;}
+.placa-count{font-size:12px;color:#c1cada;margin-top:2px;}
+.placa-name{flex:1;min-width:0;}
+.name-input{width:100%;box-sizing:border-box;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:4px;color:#eef3ff;font-size:13px;padding:6px 8px;font-family:"Segoe UI",Arial,sans-serif;}
+.name-input:disabled{color:#c1cada;opacity:.85;cursor:default;}
+.name-input:focus{outline:none;border-color:rgba(96,165,250,.58);background:rgba(255,255,255,.12);}
+.canto-block{flex-shrink:0;min-width:220px;}
+.canto-line{display:flex;gap:8px;align-items:center;margin:4px 0;}
+.canto-chip{width:16px;height:16px;border-radius:3px;flex-shrink:0;box-sizing:border-box;border:1px solid rgba(255,255,255,.25);}
+.chip-rojo{background:#ff1d1d;}
+.chip-azul{background:#1d35ff;}
+.cdrop{position:relative;min-width:150px;cursor:pointer;}
+.cdrop-selected{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:4px;color:#eef3ff;font-size:13px;padding:6px 8px;}
+.cdrop-list{position:absolute;top:100%;left:0;right:0;z-index:50;background:#22324f;border:1px solid rgba(255,255,255,.25);border-radius:4px;margin-top:2px;}
+.cdrop-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;color:#eef3ff;font-size:13px;cursor:pointer;}
+.cdrop-opt:hover{background:rgba(96,165,250,.35);}
+.cdrop-chip{width:16px;height:16px;border:1px solid rgba(255,255,255,.4);border-radius:3px;flex-shrink:0;box-sizing:border-box;}
+.canto-select{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:4px;color:#eef3ff;font-size:12px;padding:5px 6px;font-family:"Segoe UI",Arial,sans-serif;min-width:90px;}
+.canto-select:focus{outline:none;border-color:rgba(96,165,250,.58);background:rgba(255,255,255,.12);}
+select.canto-esp{color:#eef3ff;background:rgba(255,255,255,.08);}
+select.canto-esp option{background:#22324f;color:#eef3ff;}
+select.canto-esp:disabled{opacity:.9;cursor:default;}
+#app:not(.editing) .cdrop{pointer-events:none;opacity:.9;cursor:default;}
+#app:not(.editing) .cdrop-selected{cursor:default;}
+.info-footer{border-top:1px solid rgba(255,255,255,.10);padding:11px 16px;text-align:right;flex-shrink:0;}
+.save-btn{background:rgba(66,153,225,.24);border:1px solid rgba(96,165,250,.58);color:#c8e4ff;border-radius:5px;padding:9px 22px;font-size:14px;cursor:pointer;}
+.save-btn:hover{background:rgba(66,153,225,.34);}
+.empty-placas{color:#c1cada;font-size:13px;padding:8px 0;}
+</style>
+</head>
+<body>
+<div id="app">
+    <div class="header">
+        <div class="title">Info de placas</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <button id="refresh-btn" class="icon-btn" title="Refresh">🔄</button>
+            <button id="edit-btn" class="icon-btn" title="Editar">&#9998;</button>
+        </div>
+    </div>
+    <div class="content" id="rows">
+        %FILAS%
+    </div>
+    <div class="info-footer" id="info-footer" style="display:none">
+        <button id="merge-btn" class="save-btn" style="margin-right:8px;background:rgba(255,140,0,.24);border-color:rgba(255,140,0,.58);color:#ffd580;">Fusionar seleccionadas</button>
+        <button id="save-btn" class="save-btn">Terminar</button>
+    </div>
+</div>
+<script>
+(function(){
+    var app = document.getElementById('app');
+    var editBtn = document.getElementById('edit-btn');
+    var saveBtn = document.getElementById('save-btn');
+    var mergeBtn = document.getElementById('merge-btn');
+    var infoFooter = document.getElementById('info-footer');
+
+    function isEditing(){
+        return app && app.classList.contains('editing');
+    }
+
+    function isWhiteInput(input){
+        var hex = input.getAttribute('data-hex');
+        return hex && hex.toUpperCase() === '#FFFFFF';
+    }
+
+    function findParentByClass(el, className){
+        while(el && el !== document.body){
+            if(el.classList && el.classList.contains(className)){
+                return el;
+            }
+            el = el.parentNode;
+        }
+        return null;
+    }
+
+    function closeAllCdropLists(){
+        var lists = document.querySelectorAll('.cdrop-list');
+        var i;
+        for(i=0;i<lists.length;i++){
+            lists[i].style.display = 'none';
+        }
+    }
+
+    function setReadMode(){
+        var inputs = document.querySelectorAll('.name-input');
+        var selects = document.querySelectorAll('.canto-esp');
+        var i;
+
+        app.classList.remove('editing');
+        infoFooter.style.display = 'none';
+        editBtn.style.display = '';
+        closeAllCdropLists();
+
+        var checks = document.querySelectorAll('.merge-check');
+        for(i=0;i<checks.length;i++){
+            checks[i].style.display = 'none';
+            checks[i].checked = false;
+        }
+
+        for(i=0;i<inputs.length;i++){
+            inputs[i].disabled = true;
+        }
+        for(i=0;i<selects.length;i++){
+            selects[i].disabled = true;
+        }
+    }
+
+    function setEditMode(){
+        var inputs = document.querySelectorAll('.name-input');
+        var selects = document.querySelectorAll('.canto-esp');
+        var i;
+
+        app.classList.add('editing');
+        infoFooter.style.display = 'block';
+        editBtn.style.display = 'none';
+
+        var checks = document.querySelectorAll('.merge-check');
+        for(i=0;i<checks.length;i++){
+            checks[i].style.display = 'inline-block';
+        }
+
+        for(i=0;i<inputs.length;i++){
+            if(!isWhiteInput(inputs[i])){
+                inputs[i].disabled = false;
+            }
+        }
+        for(i=0;i<selects.length;i++){
+            selects[i].disabled = false;
+        }
+    }
+
+    function bindNameInputs(){
+        var inputs = document.querySelectorAll('.name-input');
+        var i;
+        for(i=0;i<inputs.length;i++){
+            if(isWhiteInput(inputs[i])){
+                continue;
+            }
+            (function(input){
+                function save(){
+                    if(!isEditing()){
+                        return;
+                    }
+                    if(window.sketchup && sketchup.update_color_name){
+                        sketchup.update_color_name(input.getAttribute('data-hex'), input.value);
+                    }
+                }
+                input.onchange = save;
+                input.onblur = save;
+            })(inputs[i]);
+        }
+    }
+
+    function bindColorDropdowns(){
+        var dropSelecteds = document.querySelectorAll('.cdrop-selected');
+        var opts = document.querySelectorAll('.cdrop-opt');
+        var i;
+
+        for(i=0;i<dropSelecteds.length;i++){
+            (function(selected){
+                selected.onclick = function(e){
+                    if(!isEditing()){
+                        return;
+                    }
+                    if(e.stopPropagation){
+                        e.stopPropagation();
+                    }
+                    var list = selected.parentNode.querySelector('.cdrop-list');
+                    var wasOpen = list.style.display === 'block';
+                    closeAllCdropLists();
+                    list.style.display = wasOpen ? 'none' : 'block';
+                };
+            })(dropSelecteds[i]);
+        }
+
+        for(i=0;i<opts.length;i++){
+            (function(opt){
+                opt.onclick = function(e){
+                    if(!isEditing()){
+                        return;
+                    }
+                    if(e.stopPropagation){
+                        e.stopPropagation();
+                    }
+                    var cdrop = findParentByClass(opt, 'cdrop');
+                    var selected;
+                    if(!cdrop){
+                        return;
+                    }
+                    selected = cdrop.querySelector('.cdrop-selected');
+                    selected.innerHTML = opt.innerHTML;
+                    closeAllCdropLists();
+                    if(window.sketchup && sketchup.update_canto_config){
+                        sketchup.update_canto_config(
+                            cdrop.getAttribute('data-th'),
+                            cdrop.getAttribute('data-color'),
+                            cdrop.getAttribute('data-slot'),
+                            'color',
+                            opt.getAttribute('data-value')
+                        );
+                    }
+                };
+            })(opts[i]);
+        }
+
+        document.addEventListener('click', function(){
+            closeAllCdropLists();
+        });
+    }
+
+    function bindEspSelects(){
+        var espSelects = document.querySelectorAll('.canto-esp');
+        var i;
+
+        for(i=0;i<espSelects.length;i++){
+            (function(select){
+                select.onchange = function(){
+                    if(!isEditing()){
+                        return;
+                    }
+                    if(window.sketchup && sketchup.update_canto_config){
+                        sketchup.update_canto_config(
+                            select.getAttribute('data-th'),
+                            select.getAttribute('data-color'),
+                            select.getAttribute('data-slot'),
+                            'espesor',
+                            select.value
+                        );
+                    }
+                };
+            })(espSelects[i]);
+        }
+    }
+
+    editBtn.onclick = function(){
+        setEditMode();
+    };
+
+    document.getElementById('refresh-btn').onclick = function(){
+        if(window.sketchup && sketchup.refresh_info){ sketchup.refresh_info(); }
+    };
+
+    mergeBtn.onclick = function(){
+        var checked = document.querySelectorAll('.merge-check:checked');
+        if(checked.length < 2){
+            alert('Seleccioná al menos 2 placas para fusionar');
+            return;
+        }
+        var hexes = [];
+        var ths = [];
+        for(var i=0;i<checked.length;i++){
+            hexes.push(checked[i].getAttribute('data-hex'));
+            ths.push(checked[i].getAttribute('data-th'));
+        }
+        if(window.sketchup && sketchup.merge_placas){
+            sketchup.merge_placas(JSON.stringify(hexes), JSON.stringify(ths));
+        }
+    };
+
+    saveBtn.onclick = function(){
+        setReadMode();
+        if(window.sketchup && sketchup.save_state){
+            sketchup.save_state();
+        }
+    };
+
+    bindNameInputs();
+    bindColorDropdowns();
+    bindEspSelects();
+    setReadMode();
+})();
+</script>
+</body>
+</html>
