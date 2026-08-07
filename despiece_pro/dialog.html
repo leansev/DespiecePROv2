@@ -355,8 +355,11 @@ body{
             TOTAL: %TOTAL% piezas
         </div>
         <div class="footer-actions">
-            <button class="export-btn" onclick="exportExcel();">
+            <button class="export-btn" onclick="exportExcel('clasico');">
                 📊 Exportar Excel
+            </button>
+            <button class="export-btn" onclick="exportExcel('cortecloud');">
+                ☁️ Exportar CorteCloud
             </button>
             <button class="export-btn" onclick="saveState();">
                 💾 Guardar
@@ -636,15 +639,17 @@ body{
         }
     };
 
-    window.exportExcel = function(){
+    window.exportExcel = function(formato){
 
         flushAllEditingModules();
+
+        formato = formato || 'clasico';
 
         if(
             window.sketchup &&
             sketchup.export_excel
         ){
-            sketchup.export_excel();
+            sketchup.export_excel(formato);
         }
     };
 

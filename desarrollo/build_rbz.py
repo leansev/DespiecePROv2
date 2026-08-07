@@ -28,6 +28,7 @@ def build_rbz():
         ('despiece_pro/extra_dialog.html', 'despiece_pro/extra_dialog.html'),
         ('despiece_pro/info_dialog.html', 'despiece_pro/info_dialog.html'),
         ('despiece_pro/export_excel.py', 'despiece_pro/export_excel.py'),
+        ('despiece_pro/export_cortecloud.py', 'despiece_pro/export_cortecloud.py'),
         ('despiece_pro/icons/scan_small.png', 'despiece_pro/icons/scan_small.png'),
         ('despiece_pro/icons/scan_large.png', 'despiece_pro/icons/scan_large.png'),
         ('despiece_pro/icons/list_small.png', 'despiece_pro/icons/list_small.png'),

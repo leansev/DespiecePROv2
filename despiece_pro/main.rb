@@ -795,6 +795,10 @@ module BiraEstudio
               piece_name = (entry[:piece_names] || {})[dim_key].to_s.strip
               piece_name = export_piece_label(acronym, piece_name)
 
+              canto_cfg = get_canto_config(piece[:thickness], piece[:color] || '#FFFFFF')
+              rojo_cfg = canto_cfg['rojo'] || {}
+              azul_cfg = canto_cfg['azul'] || {}
+
               rows << {
                 'type' => 'piece',
                 'espesor' => piece[:thickness],
@@ -808,7 +812,11 @@ module BiraEstudio
                 'canto_arr' => cantos[:arr],
                 'canto_aba' => cantos[:aba],
                 'canto_izq' => cantos[:izq],
-                'canto_der' => cantos[:der]
+                'canto_der' => cantos[:der],
+                'canto_rojo_color' => color_name(rojo_cfg['color'].to_s),
+                'canto_rojo_espesor' => rojo_cfg['espesor'].to_s,
+                'canto_azul_color' => color_name(azul_cfg['color'].to_s),
+                'canto_azul_espesor' => azul_cfg['espesor'].to_s
               }
             end
           end
@@ -861,7 +869,7 @@ module BiraEstudio
       class << self
         attr_reader :last_error
 
-        def export
+        def export(formato = 'clasico')
           if Store.modules.empty?
             UI.messagebox('No hay modulos para exportar.')
             return
@@ -884,12 +892,13 @@ module BiraEstudio
             return
           end
 
-          path = UI.savepanel('Guardar Excel', '', 'despiece.xlsx')
+          default_name = formato.to_s == 'cortecloud' ? 'despiece_cortecloud.xlsx' : 'despiece.xlsx'
+          path = UI.savepanel('Guardar Excel', '', default_name)
           return unless path
 
           path = normalize_xlsx_path(path)
 
-          if write_xlsx(path)
+          if write_xlsx(path, formato)
             Sketchup.status_text = "Excel exportado: #{path}"
           else
             detail = last_error.to_s.strip
@@ -905,7 +914,7 @@ module BiraEstudio
           path + '.xlsx'
         end
 
-        def write_xlsx(xlsx_path)
+        def write_xlsx(xlsx_path, formato = 'clasico')
           @last_error = nil
           python = find_python_executable
           unless python
@@ -913,7 +922,8 @@ module BiraEstudio
             return false
           end
 
-          script = File.join(PLUGIN_DIR, 'export_excel.py')
+          script_name = formato.to_s == 'cortecloud' ? 'export_cortecloud.py' : 'export_excel.py'
+          script = File.join(PLUGIN_DIR, script_name)
           unless File.exist?(script)
             @last_error = "No se encontro el script: #{script}"
             return false
@@ -1397,8 +1407,10 @@ module BiraEstudio
             refresh
           end
 
-          dialog.add_action_callback('export_excel') do |_context|
-            ExcelExporter.export
+          dialog.add_action_callback('export_excel') do |_context, formato|
+            formato = formato.to_s.strip
+            formato = 'clasico' if formato.empty?
+            ExcelExporter.export(formato)
           end
 
           dialog.add_action_callback('save_state') do |_context|
