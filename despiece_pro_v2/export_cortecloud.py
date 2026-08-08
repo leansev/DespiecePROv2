@@ -99,10 +99,10 @@ def write_piece_row(sheet, row_index, item, complemento, use_alt_fill):
         item['largo'],
         item['ancho'],
         item['nombre'],
-        canto_label(item, item.get('canto_izq', 0)),
-        canto_label(item, item.get('canto_der', 0)),
         canto_label(item, item.get('canto_aba', 0)),
         canto_label(item, item.get('canto_arr', 0)),
+        canto_label(item, item.get('canto_izq', 0)),
+        canto_label(item, item.get('canto_der', 0)),
         piece_placa(item),
         complemento,
     ]
