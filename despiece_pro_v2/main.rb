@@ -65,6 +65,7 @@ module BiraEstudio
       ATTRIBUTE_DICT = 'despiece_pro_v2'.freeze
       ATTRIBUTE_KEY = 'data'.freeze
       MODULE_UID_KEY = 'uid'.freeze
+      PIECE_UID_KEY = 'piece_uid'.freeze
 
       class << self
         attr_reader :modules, :scanned_entities
@@ -107,32 +108,81 @@ module BiraEstudio
           entry[:name] = name
         end
 
-        def update_piece_name(uid, dim_key, name)
+        def update_piece_name(uid, piece_uid, name)
           entry = find_module_by_uid(uid)
           return unless entry
 
           entry[:piece_names] ||= {}
+          piece_uid = piece_uid.to_s
           name = name.to_s.strip
           if name.empty?
-            entry[:piece_names].delete(dim_key.to_s)
+            entry[:piece_names].delete(piece_uid)
           else
-            entry[:piece_names][dim_key.to_s] = name
+            entry[:piece_names][piece_uid] = name
           end
         end
 
-        def get_piece_cantos(uid, dim_key)
+        def get_piece_cantos(uid, piece_uid)
           entry = find_module_by_uid(uid)
           return { arr: 0, aba: 0, izq: 0, der: 0 } unless entry
-          stored = (entry[:piece_cantos] || {})[dim_key.to_s]
+          stored = (entry[:piece_cantos] || {})[piece_uid.to_s]
           return { arr: 0, aba: 0, izq: 0, der: 0 } unless stored
           { arr: stored['arr'].to_i, aba: stored['aba'].to_i, izq: stored['izq'].to_i, der: stored['der'].to_i }
         end
 
-        def update_piece_cantos(uid, dim_key, arr, aba, izq, der)
+        def update_piece_cantos(uid, piece_uid, arr, aba, izq, der)
           entry = find_module_by_uid(uid)
           return unless entry
           entry[:piece_cantos] ||= {}
-          entry[:piece_cantos][dim_key.to_s] = { 'arr' => arr.to_i, 'aba' => aba.to_i, 'izq' => izq.to_i, 'der' => der.to_i }
+          entry[:piece_cantos][piece_uid.to_s] = { 'arr' => arr.to_i, 'aba' => aba.to_i, 'izq' => izq.to_i, 'der' => der.to_i }
+        end
+
+        def piece_invertida?(piece)
+          piece[:invertida] == true
+        end
+
+        def find_piece_by_uid(entry, piece_uid)
+          piece_uid = piece_uid.to_s
+          entry[:pieces].find { |piece| piece[:uid].to_s == piece_uid }
+        end
+
+        def toggle_piece_invertida(uid, piece_uid)
+          entry = find_module_by_uid(uid)
+          return false unless entry
+
+          piece = find_piece_by_uid(entry, piece_uid)
+          return false unless piece
+
+          piece[:invertida] = !piece_invertida?(piece)
+          piece[:invertida]
+        end
+
+        # extra_dialog: arr/aba = largo (horizontal), izq/der = ancho (vertical)
+        def display_dimensions(piece)
+          if piece_invertida?(piece)
+            {
+              length: piece[:width],
+              width: piece[:length],
+              thickness: piece[:thickness]
+            }
+          else
+            {
+              length: piece[:length],
+              width: piece[:width],
+              thickness: piece[:thickness]
+            }
+          end
+        end
+
+        def display_cantos(cantos, invertida)
+          return cantos unless invertida
+
+          {
+            arr: cantos[:izq],
+            aba: cantos[:der],
+            izq: cantos[:arr],
+            der: cantos[:aba]
+          }
         end
 
         def canto_color(v)
@@ -286,19 +336,16 @@ module BiraEstudio
           piece_total = module_piece_count(entry)
 
           piece_rows = entry[:pieces].map do |piece|
-            dim_key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
-            piece_name = (entry[:piece_names] || {})[dim_key] || ''
+            piece_uid = piece[:uid].to_s
+            piece_name = (entry[:piece_names] || {})[piece_uid] || ''
             render_piece_row(
+              piece,
               piece[:count],
-              piece[:length],
-              piece[:width],
-              piece[:thickness],
               acronym,
               piece_name,
-              dim_key,
+              piece_uid,
               color,
-              uid,
-              piece[:color] || '#FFFFFF'
+              uid
             )
           end.join('')
 
@@ -323,18 +370,24 @@ module BiraEstudio
             '</div>'
         end
 
-        def render_piece_row(count, length, width, thickness, acronym, piece_name, dim_key, color, uid, color_pieza)
-          dims = length.to_s + ' × ' + width.to_s + ' × ' + thickness.to_s + 'mm'
-          cantos = get_piece_cantos(uid, dim_key)
+        def render_piece_row(piece, count, acronym, piece_name, piece_uid, color, uid)
+          dims_data = display_dimensions(piece)
+          dims = dims_data[:length].to_s + ' × ' + dims_data[:width].to_s + ' × ' + dims_data[:thickness].to_s + 'mm'
+          invertida = piece_invertida?(piece)
+          cantos = get_piece_cantos(uid, piece_uid)
+          disp_cantos = display_cantos(cantos, invertida)
+          color_pieza = piece[:color] || '#FFFFFF'
+          invert_class = invertida ? 'invert-btn is-active' : 'invert-btn'
 
-          '<div class="piece-row" data-dim-key="' + escape_html(dim_key) + '">' +
+          '<div class="piece-row" data-piece-uid="' + escape_html(piece_uid) + '">' +
             '<div class="color-chip" style="background:' + escape_html(color_pieza) + ';"></div>' +
             '<div class="qty">' + count.to_s + 'x</div>' +
             '<div class="dimensions">' + dims + '</div>' +
             '<div><span class="badge" style="color:' + color + ';">' + escape_html(acronym) + '</span></div>' +
             '<div class="piece-name">' + escape_html(piece_name) + '</div>' +
-            '<div class="extra-btn canto-preview" title="Tapacantos" data-uid="' + escape_html(uid.to_s) + '" data-dim-key="' + escape_html(dim_key) + '" ' +
-            'style="border-top-color:' + canto_color(cantos[:arr]) + ';border-bottom-color:' + canto_color(cantos[:aba]) + ';border-left-color:' + canto_color(cantos[:izq]) + ';border-right-color:' + canto_color(cantos[:der]) + ';"></div>' +
+            '<button type="button" class="' + invert_class + '" title="Invertir dimensiones" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '">&#8644;</button>' +
+            '<div class="extra-btn canto-preview" title="Tapacantos" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '" ' +
+            'style="border-top-color:' + canto_color(disp_cantos[:arr]) + ';border-bottom-color:' + canto_color(disp_cantos[:aba]) + ';border-left-color:' + canto_color(disp_cantos[:izq]) + ';border-right-color:' + canto_color(disp_cantos[:der]) + ';"></div>' +
             '</div>'
         end
 
@@ -428,6 +481,117 @@ module BiraEstudio
           "mod_#{Time.now.to_i}_#{rand(10000)}"
         end
 
+        def entity_piece_uid(entity)
+          return '' unless entity
+
+          uid = entity.get_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY)
+          uid.to_s.strip
+        rescue StandardError
+          ''
+        end
+
+        def ensure_piece_uid(entity)
+          uid = entity_piece_uid(entity)
+          return uid unless uid.empty?
+
+          uid = generate_piece_uid
+          entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, uid)
+          uid
+        end
+
+        def generate_piece_uid
+          "pie_#{Time.now.to_i}_#{rand(10000)}"
+        end
+
+        def unify_group_piece_uid(entities)
+          uids = entities.map { |entity| ensure_piece_uid(entity) }.uniq
+          canonical = uids.min
+          entities.each do |entity|
+            entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, canonical)
+          end
+          canonical
+        end
+
+        def migrate_piece_metadata!(entry)
+          names = normalize_hash(entry[:piece_names] || {})
+          cantos = normalize_hash(entry[:piece_cantos] || {})
+          return if names.empty? && cantos.empty?
+          return if names.keys.any? { |key| piece_uid_key?(key) }
+
+          new_names = {}
+          new_cantos = {}
+          entry[:pieces].each do |piece|
+            piece_uid = piece[:uid].to_s
+            old_key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
+            new_names[piece_uid] = names[old_key] if names.key?(old_key)
+            new_cantos[piece_uid] = cantos[old_key] if cantos.key?(old_key)
+          end
+
+          names.each do |key, value|
+            new_names[key] = value if piece_uid_key?(key) && !new_names.key?(key)
+          end
+          cantos.each do |key, value|
+            new_cantos[key] = value if piece_uid_key?(key) && !new_cantos.key?(key)
+          end
+
+          entry[:piece_names] = new_names
+          entry[:piece_cantos] = new_cantos
+        end
+
+        def piece_uid_key?(key)
+          key.to_s.start_with?('pie_')
+        end
+
+        def cleanup_orphan_piece_metadata!(entry)
+          active_uids = entry[:pieces].map { |piece| piece[:uid].to_s }.uniq
+          active_lookup = active_uids.each_with_object({}) { |uid, memo| memo[uid] = true }
+
+          entry[:piece_names] ||= {}
+          entry[:piece_cantos] ||= {}
+          entry[:piece_names].delete_if { |key, _| !active_lookup[key.to_s] }
+          entry[:piece_cantos].delete_if { |key, _| !active_lookup[key.to_s] }
+        end
+
+        def assign_missing_entity_piece_uids(module_entity, entry)
+          scanner = ScanModuleTool.new
+          raw_pieces = scanner.collect_pieces(module_entity)
+          return if raw_pieces.empty?
+
+          available_uids_by_key = {}
+          entry[:pieces].each do |piece|
+            key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
+            available_uids_by_key[key] ||= []
+            available_uids_by_key[key] << piece[:uid].to_s
+          end
+
+          groups = {}
+          raw_pieces.each do |entity|
+            next unless entity_piece_uid(entity).empty?
+
+            begin
+              dims = DimHelpers.piece_dimensions_mm(entity)
+              color = DimHelpers.piece_color_hex(entity)
+              sorted_dims = [dims[:length], dims[:width], dims[:thickness]].sort { |a, b| b <=> a }
+              key = piece_dim_key(sorted_dims[0], sorted_dims[1], sorted_dims[2], color)
+              groups[key] ||= []
+              groups[key] << entity
+            rescue ArgumentError
+              next
+            end
+          end
+
+          groups.each do |key, entities|
+            pool = (available_uids_by_key[key] || []).dup
+            entities.each do |entity|
+              next unless entity_piece_uid(entity).empty?
+
+              uid = pool.shift
+              uid = generate_piece_uid if uid.nil? || uid.empty?
+              entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, uid)
+            end
+          end
+        end
+
         def build_uid_entity_map(model)
           map = {}
           collect_uid_entities(model.entities, map)
@@ -480,6 +644,8 @@ module BiraEstudio
               next
             end
 
+            assign_missing_entity_piece_uids(entity, entry)
+
             begin
               pieces = scanner.collect_pieces(entity)
               new_grouped = scanner.group_pieces_by_dimensions(pieces)
@@ -501,28 +667,36 @@ module BiraEstudio
 
             added_keys.each do |k|
               p = new_grouped.find { |np| dim_key_no_color.call(np[:length], np[:width], np[:thickness]) == k }
-              pk = piece_dim_key(p[:length], p[:width], p[:thickness], p[:color] || '#FFFFFF')
-              name = (entry[:piece_names] || {})[pk].to_s
+              name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:added] << { module_name: entry[:name], piece: p, name: name }
             end
 
             removed_keys.each do |k|
               p = entry[:pieces].find { |op| dim_key_no_color.call(op[:length], op[:width], op[:thickness]) == k }
-              pk = piece_dim_key(p[:length], p[:width], p[:thickness], p[:color] || '#FFFFFF')
-              name = (entry[:piece_names] || {})[pk].to_s
+              name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:removed] << { module_name: entry[:name], piece: p, name: name }
             end
 
             changed_keys.each do |k|
               old_p = entry[:pieces].find { |op| dim_key_no_color.call(op[:length], op[:width], op[:thickness]) == k }
               new_p = new_grouped.find { |np| dim_key_no_color.call(np[:length], np[:width], np[:thickness]) == k }
-              pk = piece_dim_key(old_p[:length], old_p[:width], old_p[:thickness], old_p[:color] || '#FFFFFF')
-              name = (entry[:piece_names] || {})[pk].to_s
+              name = (entry[:piece_names] || {})[old_p[:uid].to_s].to_s
               report[:changed] << { module_name: entry[:name], old: old_p, new: new_p, name: name }
             end
 
-            # Actualizar piezas preservando nombres y cantos
-            entry[:pieces] = new_grouped
+            invertida_by_uid = {}
+            entry[:pieces].each do |piece|
+              next unless piece_invertida?(piece)
+
+              invertida_by_uid[piece[:uid].to_s] = true
+            end
+
+            entry[:pieces] = new_grouped.map do |piece|
+              piece[:invertida] = true if invertida_by_uid[piece[:uid].to_s]
+              piece
+            end
+
+            cleanup_orphan_piece_metadata!(entry)
           end
 
           # Eliminar módulos cuyos grupos ya no existen
@@ -608,7 +782,7 @@ module BiraEstudio
               puts "Despiece PRO: uid #{uid} no encontrado en el modelo, restaurando datos igual"
             end
 
-            @modules << {
+            module_entry = {
               name: entry['name'].to_s,
               uid: uid,
               pieces: pieces,
@@ -616,6 +790,9 @@ module BiraEstudio
               piece_cantos: normalize_hash(entry['piece_cantos'] || {}),
               badge_color: entry['badge_color'] || DEFAULT_BADGE_COLOR
             }
+            migrate_piece_metadata!(module_entry)
+            assign_missing_entity_piece_uids(entity, module_entry) if entity && entity.valid?
+            @modules << module_entry
             restored_count += 1
           end
 
@@ -673,11 +850,13 @@ module BiraEstudio
               'name' => entry[:name],
               'pieces' => entry[:pieces].map do |piece|
                 {
+                  'uid' => piece[:uid].to_s,
                   'count' => piece[:count],
                   'length' => piece[:length],
                   'width' => piece[:width],
                   'thickness' => piece[:thickness],
-                  'color' => piece[:color] || '#FFFFFF'
+                  'color' => piece[:color] || '#FFFFFF',
+                  'invertida' => piece_invertida?(piece)
                 }
               end,
               'piece_names' => entry[:piece_names] || {},
@@ -700,12 +879,16 @@ module BiraEstudio
             piece = normalize_hash(piece)
             piece_color = piece['color'].to_s.strip
             piece_color = '#FFFFFF' if piece_color.empty?
+            piece_uid = piece['uid'].to_s.strip
+            piece_uid = generate_piece_uid if piece_uid.empty?
             {
+              uid: piece_uid,
               count: piece['count'].to_i,
               length: piece['length'].to_i,
               width: piece['width'].to_i,
               thickness: piece['thickness'].to_i,
-              color: piece_color
+              color: piece_color,
+              invertida: piece['invertida'] == true
             }
           end
         end
@@ -790,9 +973,9 @@ module BiraEstudio
             }
 
             entry[:pieces].each do |piece|
-              dim_key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
-              cantos = get_piece_cantos(entry[:uid], dim_key)
-              piece_name = (entry[:piece_names] || {})[dim_key].to_s.strip
+              piece_uid = piece[:uid].to_s
+              cantos = get_piece_cantos(entry[:uid], piece_uid)
+              piece_name = (entry[:piece_names] || {})[piece_uid].to_s.strip
               piece_name = export_piece_label(acronym, piece_name)
 
               canto_cfg = get_canto_config(piece[:thickness], piece[:color] || '#FFFFFF')
@@ -816,7 +999,8 @@ module BiraEstudio
                 'canto_rojo_color' => color_name(rojo_cfg['color'].to_s),
                 'canto_rojo_espesor' => rojo_cfg['espesor'].to_s,
                 'canto_azul_color' => color_name(azul_cfg['color'].to_s),
-                'canto_azul_espesor' => azul_cfg['espesor'].to_s
+                'canto_azul_espesor' => azul_cfg['espesor'].to_s,
+                'invertida' => piece_invertida?(piece)
               }
             end
           end
@@ -974,18 +1158,16 @@ module BiraEstudio
       DIALOG_KEY = 'despiece_pro_v2_extra'.freeze
 
       class << self
-        def show(uid, dim_key)
+        def show(uid, piece_uid)
           entry = Store.find_module_by_uid(uid)
           return unless entry
-          piece = entry[:pieces].find do |p|
-            Store.piece_dim_key(p[:length], p[:width], p[:thickness], p[:color] || '#FFFFFF') == dim_key.to_s
-          end
+          piece = Store.find_piece_by_uid(entry, piece_uid)
           return unless piece
-          piece_name = (entry[:piece_names] || {})[dim_key.to_s].to_s.strip
+          piece_name = (entry[:piece_names] || {})[piece_uid.to_s].to_s.strip
           piece_name = 'Pieza' if piece_name.empty?
           @current_uid = uid
-          @current_dim_key = dim_key
-          cantos = Store.get_piece_cantos(uid, dim_key)
+          @current_piece_uid = piece_uid
+          cantos = Store.get_piece_cantos(uid, piece_uid)
           @dialog ||= build_dialog
           @dialog.set_html(dialog_body_html(piece, piece_name, cantos))
           @dialog.show
@@ -1003,7 +1185,7 @@ module BiraEstudio
           )
 
           dialog.add_action_callback('save_cantos') do |_context, arr, aba, izq, der|
-            Store.update_piece_cantos(@current_uid, @current_dim_key, arr, aba, izq, der)
+            Store.update_piece_cantos(@current_uid, @current_piece_uid, arr, aba, izq, der)
             Store.save_to_model(Sketchup.active_model)
             ListDialog.refresh
             dialog.close
@@ -1012,7 +1194,7 @@ module BiraEstudio
           dialog.set_on_closed do
             @dialog = nil
             @current_uid = nil
-            @current_dim_key = nil
+            @current_piece_uid = nil
           end
 
           dialog
@@ -1382,8 +1564,13 @@ module BiraEstudio
             end
           end
 
-          dialog.add_action_callback('update_piece_name') do |_context, entity_id, dim_key, name|
-            Store.update_piece_name(entity_id, dim_key, name)
+          dialog.add_action_callback('update_piece_name') do |_context, entity_id, piece_uid, name|
+            Store.update_piece_name(entity_id, piece_uid, name)
+          end
+
+          dialog.add_action_callback('toggle_invertida') do |_context, uid, piece_uid|
+            Store.toggle_piece_invertida(uid, piece_uid)
+            refresh
           end
 
           dialog.add_action_callback('update_module_badge_color') do |_context, entity_id, color|
@@ -1417,8 +1604,8 @@ module BiraEstudio
             Store.save_to_model(Sketchup.active_model)
           end
 
-          dialog.add_action_callback('open_extra') do |_context, uid, dim_key|
-            ExtraDialog.show(uid, dim_key)
+          dialog.add_action_callback('open_extra') do |_context, uid, piece_uid|
+            ExtraDialog.show(uid, piece_uid)
           end
 
           dialog.add_action_callback('open_info') do |_context|
@@ -1637,7 +1824,7 @@ module BiraEstudio
       end
 
       def group_pieces_by_dimensions(pieces)
-        counts = {}
+        groups = {}
         order = []
 
         pieces.each do |piece|
@@ -1646,11 +1833,11 @@ module BiraEstudio
             color_hex = DimHelpers.piece_color_hex(piece)
             sorted_dims = [dims[:length], dims[:width], dims[:thickness]].sort { |a, b| b <=> a }
             key = sorted_dims + [color_hex]
-            unless counts.key?(key)
-              counts[key] = 0
+            unless groups.key?(key)
+              groups[key] = { entities: [] }
               order << key
             end
-            counts[key] += 1
+            groups[key][:entities] << piece
           rescue ArgumentError
             next
           end
@@ -1658,12 +1845,16 @@ module BiraEstudio
 
         order.map do |(length, width, thickness, color_hex)|
           key = [length, width, thickness, color_hex]
+          entities = groups[key][:entities]
+          piece_uid = Store.unify_group_piece_uid(entities)
           {
-            count: counts[key],
+            uid: piece_uid,
+            count: entities.length,
             length: length,
             width: width,
             thickness: thickness,
-            color: color_hex
+            color: color_hex,
+            invertida: false
           }
         end
       end

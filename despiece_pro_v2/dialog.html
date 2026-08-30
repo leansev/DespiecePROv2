@@ -225,6 +225,30 @@ body{
     flex-shrink:0;
     cursor:pointer;
 }
+.invert-btn{
+    flex-shrink:0;
+    width:22px;
+    height:22px;
+    margin-left:8px;
+    padding:0;
+    border:1px solid rgba(255,255,255,.28);
+    border-radius:4px;
+    background:rgba(255,255,255,.06);
+    color:#d8c4cf;
+    font-size:13px;
+    line-height:20px;
+    text-align:center;
+    cursor:pointer;
+}
+.invert-btn:hover{
+    background:rgba(255,255,255,.12);
+    color:#fff;
+}
+.invert-btn.is-active{
+    border-color:#B05CFF;
+    background:rgba(176,92,255,.22);
+    color:#FF8A3D;
+}
 .canto-preview{
     width:18px;
     height:18px;
@@ -232,6 +256,7 @@ body{
     border-style:solid;
     border-width:3px;
     background:rgba(255,255,255,.06);
+    margin-left:6px;
 }
 .canto-preview:hover{
     background:rgba(255,255,255,.14);
@@ -507,8 +532,8 @@ body{
         var entityId =
             module.getAttribute('data-entity-id');
 
-        var dimKey =
-            row.getAttribute('data-dim-key');
+        var pieceUid =
+            row.getAttribute('data-piece-uid');
 
         var pieceName =
             row.querySelector('.piece-name');
@@ -520,7 +545,7 @@ body{
         ){
             sketchup.update_piece_name(
                 entityId,
-                dimKey,
+                pieceUid,
                 trim(pieceName.innerText)
             );
         }
@@ -679,6 +704,26 @@ body{
 
     document.addEventListener('click', function(e){
 
+        var invertBtn = findParentByClass(e.target, 'invert-btn');
+
+        if(invertBtn){
+
+            var uidInv =
+                invertBtn.getAttribute('data-uid');
+
+            var pieceUidInv =
+                invertBtn.getAttribute('data-piece-uid');
+
+            if(
+                window.sketchup &&
+                sketchup.toggle_invertida
+            ){
+                sketchup.toggle_invertida(uidInv, pieceUidInv);
+            }
+
+            return;
+        }
+
         var extraBtn = findParentByClass(e.target, 'extra-btn');
 
         if(extraBtn){
@@ -686,14 +731,14 @@ body{
             var uid =
                 extraBtn.getAttribute('data-uid');
 
-            var dimKey =
-                extraBtn.getAttribute('data-dim-key');
+            var pieceUid =
+                extraBtn.getAttribute('data-piece-uid');
 
             if(
                 window.sketchup &&
                 sketchup.open_extra
             ){
-                sketchup.open_extra(uid, dimKey);
+                sketchup.open_extra(uid, pieceUid);
             }
 
             return;
