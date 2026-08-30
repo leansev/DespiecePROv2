@@ -552,6 +552,72 @@ module BiraEstudio
           entry[:piece_cantos].delete_if { |key, _| !active_lookup[key.to_s] }
         end
 
+        def transfer_piece_metadata!(entry, old_uid, new_uid)
+          old_uid = old_uid.to_s
+          new_uid = new_uid.to_s
+          return if old_uid.empty? || new_uid.empty? || old_uid == new_uid
+
+          entry[:piece_names] ||= {}
+          entry[:piece_cantos] ||= {}
+
+          if entry[:piece_names].key?(old_uid) && !entry[:piece_names].key?(new_uid)
+            entry[:piece_names][new_uid] = entry[:piece_names].delete(old_uid)
+          end
+
+          if entry[:piece_cantos].key?(old_uid) && !entry[:piece_cantos].key?(new_uid)
+            entry[:piece_cantos][new_uid] = entry[:piece_cantos].delete(old_uid)
+          end
+        end
+
+        # Tras cambiar medida/color en SketchUp, el piece_uid de la entidad puede cambiar.
+        # Empareja piezas viejas/nuevas sin uid en comun y transfiere nombre/cantos/invertida.
+        def reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
+          old_by_uid = {}
+          old_pieces.each { |piece| old_by_uid[piece[:uid].to_s] = piece }
+
+          matched_old = {}
+          matched_new = {}
+
+          new_grouped.each_with_index do |np, idx|
+            uid = np[:uid].to_s
+            next if uid.empty?
+
+            old_piece = old_by_uid[uid]
+            unless old_piece
+              np[:invertida] = false if np[:invertida].nil?
+              next
+            end
+
+            np[:invertida] = piece_invertida?(old_piece)
+            matched_old[uid] = true
+            matched_new[idx] = true
+          end
+
+          unmatched_old = old_pieces.reject { |piece| matched_old[piece[:uid].to_s] }
+          unmatched_new_indices = new_grouped.each_index.reject { |i| matched_new[i] }
+
+          if unmatched_old.length == 1 && unmatched_new_indices.length == 1
+            old_piece = unmatched_old[0]
+            new_piece = new_grouped[unmatched_new_indices[0]]
+            transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
+            new_piece[:invertida] = piece_invertida?(old_piece)
+          elsif !unmatched_new_indices.empty? && unmatched_old.length == unmatched_new_indices.length
+            unmatched_new_indices.each_with_index do |idx, i|
+              old_piece = unmatched_old[i]
+              new_piece = new_grouped[idx]
+              transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
+              new_piece[:invertida] = piece_invertida?(old_piece)
+            end
+          end
+
+          new_grouped.each do |np|
+            np[:invertida] = false if np[:invertida].nil?
+          end
+
+          cleanup_orphan_piece_metadata!(entry)
+          new_grouped
+        end
+
         def assign_missing_entity_piece_uids(module_entity, entry)
           scanner = ScanModuleTool.new
           raw_pieces = scanner.collect_pieces(module_entity)
@@ -684,19 +750,8 @@ module BiraEstudio
               report[:changed] << { module_name: entry[:name], old: old_p, new: new_p, name: name }
             end
 
-            invertida_by_uid = {}
-            entry[:pieces].each do |piece|
-              next unless piece_invertida?(piece)
-
-              invertida_by_uid[piece[:uid].to_s] = true
-            end
-
-            entry[:pieces] = new_grouped.map do |piece|
-              piece[:invertida] = true if invertida_by_uid[piece[:uid].to_s]
-              piece
-            end
-
-            cleanup_orphan_piece_metadata!(entry)
+            old_pieces = entry[:pieces].map(&:dup)
+            entry[:pieces] = reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
           end
 
           # Eliminar módulos cuyos grupos ya no existen
