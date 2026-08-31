@@ -664,6 +664,91 @@ module BiraEstudio
           map
         end
 
+        def relink_module_entities(model)
+          uid_map = build_uid_entity_map(model)
+          scanner = ScanModuleTool.new
+          claimed_uids = @modules.map { |entry| entry[:uid].to_s }.each_with_object({}) { |uid, memo| memo[uid] = true }
+          candidates = []
+          collect_unlinked_module_candidates(model.entities, candidates, claimed_uids)
+
+          @modules.each do |entry|
+            uid = entry[:uid].to_s
+            next if uid.empty? || uid_map[uid]
+
+            match = candidates.find do |entity|
+              entity.valid? && entity_uid(entity).empty? && entity.name.to_s.strip == entry[:name].to_s.strip
+            end
+
+            unless match
+              old_sig = module_piece_signature(entry)
+              match = candidates.find do |entity|
+                next false unless entity.valid? && entity_uid(entity).empty?
+
+                begin
+                  pieces = scanner.collect_pieces(entity)
+                  grouped = scanner.group_pieces_by_dimensions(pieces)
+                  module_piece_signature_from_grouped(grouped) == old_sig
+                rescue StandardError
+                  false
+                end
+              end
+            end
+
+            next unless match
+
+            match.set_attribute(ATTRIBUTE_DICT, MODULE_UID_KEY, uid)
+            uid_map[uid] = match
+            @scanned_uids << uid unless @scanned_uids.include?(uid)
+            @scanned_entities << match unless @scanned_entities.include?(match)
+            candidates.delete(match)
+          end
+
+          uid_map
+        end
+
+        def collect_unlinked_module_candidates(entities, candidates, claimed_uids)
+          scanner = ScanModuleTool.new
+          entities.each do |entity|
+            next unless entity.valid?
+            next unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
+
+            uid = entity_uid(entity)
+            if uid.empty? && scanner.module_container?(entity)
+              candidates << entity
+            end
+
+            if entity.is_a?(Sketchup::Group)
+              collect_unlinked_module_candidates(entity.entities, candidates, claimed_uids)
+            elsif entity.is_a?(Sketchup::ComponentInstance)
+              collect_unlinked_module_candidates(entity.definition.entities, candidates, claimed_uids)
+            end
+          end
+        end
+
+        def module_piece_signature(entry)
+          (entry[:pieces] || []).map do |piece|
+            [
+              piece[:length].to_i,
+              piece[:width].to_i,
+              piece[:thickness].to_i,
+              (piece[:color] || '#FFFFFF').to_s.strip.upcase,
+              piece[:count].to_i
+            ]
+          end.sort
+        end
+
+        def module_piece_signature_from_grouped(grouped)
+          grouped.map do |piece|
+            [
+              piece[:length].to_i,
+              piece[:width].to_i,
+              piece[:thickness].to_i,
+              (piece[:color] || '#FFFFFF').to_s.strip.upcase,
+              piece[:count].to_i
+            ]
+          end.sort
+        end
+
         def collect_uid_entities(entities, map)
           entities.each do |entity|
             next unless entity.valid?
@@ -693,9 +778,9 @@ module BiraEstudio
 
         def refresh_all_modules
           model = Sketchup.active_model
-          uid_map = build_uid_entity_map(model)
+          uid_map = relink_module_entities(model)
           scanner = BiraEstudio::DespieceProV2::ScanModuleTool.new
-          report = { added: [], removed: [], changed: [] }
+          report = { added: [], removed: [], changed: [], skipped: [] }
 
           dim_key_no_color = lambda do |length, width, thickness|
             "#{length.to_i},#{width.to_i},#{thickness.to_i}"
@@ -706,7 +791,7 @@ module BiraEstudio
             entity = uid_map[uid]
 
             unless entity && entity.valid?
-              report[:removed] << { module_name: entry[:name], reason: 'grupo eliminado del modelo' }
+              report[:skipped] << { module_name: entry[:name], reason: 'grupo no encontrado en el modelo (se conservan los datos guardados)' }
               next
             end
 
@@ -717,6 +802,12 @@ module BiraEstudio
               new_grouped = scanner.group_pieces_by_dimensions(pieces)
             rescue StandardError => e
               puts "Despiece PRO refresh: error escaneando #{entry[:name]} - #{e.message}"
+              report[:skipped] << { module_name: entry[:name], reason: "error al escanear: #{e.message}" }
+              next
+            end
+
+            if new_grouped.empty?
+              report[:skipped] << { module_name: entry[:name], reason: 'sin piezas detectadas (se conservan los datos guardados)' }
               next
             end
 
@@ -752,12 +843,6 @@ module BiraEstudio
 
             old_pieces = entry[:pieces].map(&:dup)
             entry[:pieces] = reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
-          end
-
-          # Eliminar módulos cuyos grupos ya no existen
-          @modules.reject! do |entry|
-            entity = uid_map[entry[:uid]]
-            !(entity && entity.valid?)
           end
 
           save_to_model(model)
@@ -850,6 +935,8 @@ module BiraEstudio
             @modules << module_entry
             restored_count += 1
           end
+
+          relink_module_entities(model)
 
           puts "Despiece PRO: #{restored_count} modulos restaurados de #{modules_data.length}"
           restored_count
@@ -1510,10 +1597,18 @@ module BiraEstudio
           added   = report[:added]   || []
           removed = report[:removed] || []
           changed = report[:changed] || []
+          skipped = report[:skipped] || []
 
-          return if added.empty? && removed.empty? && changed.empty?
+          return if added.empty? && removed.empty? && changed.empty? && skipped.empty?
 
           lines = []
+
+          unless skipped.empty?
+            lines << "MODULOS SIN ACTUALIZAR (#{skipped.length}):"
+            skipped.each do |item|
+              lines << "  ! #{item[:module_name]}: #{item[:reason]}"
+            end
+          end
 
           unless added.empty?
             lines << "PIEZAS AGREGADAS (#{added.length}):"
