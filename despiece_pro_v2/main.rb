@@ -570,44 +570,72 @@ module BiraEstudio
         end
 
         # Tras cambiar medida/color en SketchUp, el piece_uid de la entidad puede cambiar.
-        # Empareja piezas viejas/nuevas sin uid en comun y transfiere nombre/cantos/invertida.
+        # Empareja piezas viejas/nuevas y transfiere nombre/cantos/invertida.
         def reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
-          old_by_uid = {}
-          old_pieces.each { |piece| old_by_uid[piece[:uid].to_s] = piece }
-
+          old_pieces = old_pieces.map(&:dup)
           matched_old = {}
           matched_new = {}
 
+          # 1) Mismo piece_uid en entidad
           new_grouped.each_with_index do |np, idx|
             uid = np[:uid].to_s
             next if uid.empty?
 
-            old_piece = old_by_uid[uid]
+            old_piece = old_pieces.find { |p| p[:uid].to_s == uid && !matched_old[p[:uid].to_s] }
             unless old_piece
               np[:invertida] = false if np[:invertida].nil?
               next
             end
 
             np[:invertida] = piece_invertida?(old_piece)
-            matched_old[uid] = true
+            matched_old[old_piece[:uid].to_s] = true
+            matched_new[idx] = true
+          end
+
+          # 2) Mismas dimensiones+color pero uid distinto (entidad re-etiquetada)
+          new_grouped.each_with_index do |np, idx|
+            next if matched_new[idx]
+
+            key = piece_dim_key(np[:length], np[:width], np[:thickness], np[:color] || '#FFFFFF')
+            old_piece = old_pieces.find do |p|
+              !matched_old[p[:uid].to_s] &&
+                piece_dim_key(p[:length], p[:width], p[:thickness], p[:color] || '#FFFFFF') == key
+            end
+            next unless old_piece
+
+            transfer_piece_metadata!(entry, old_piece[:uid], np[:uid])
+            np[:invertida] = piece_invertida?(old_piece)
+            matched_old[old_piece[:uid].to_s] = true
+            matched_new[idx] = true
+          end
+
+          # 3) Modificación probable: mismo ancho/espesor/color, largo distinto
+          new_grouped.each_with_index do |np, idx|
+            next if matched_new[idx]
+
+            old_piece = old_pieces.find do |p|
+              !matched_old[p[:uid].to_s] && piece_similar_modification?(p, np)
+            end
+            next unless old_piece
+
+            transfer_piece_metadata!(entry, old_piece[:uid], np[:uid])
+            np[:invertida] = piece_invertida?(old_piece)
+            matched_old[old_piece[:uid].to_s] = true
             matched_new[idx] = true
           end
 
           unmatched_old = old_pieces.reject { |piece| matched_old[piece[:uid].to_s] }
           unmatched_new_indices = new_grouped.each_index.reject { |i| matched_new[i] }
 
-          if unmatched_old.length == 1 && unmatched_new_indices.length == 1
-            old_piece = unmatched_old[0]
-            new_piece = new_grouped[unmatched_new_indices[0]]
+          # 4) Emparejar restantes en orden (ej. 1 eliminada + 2 nuevas → la 1ra hereda metadata)
+          pair_count = [unmatched_old.length, unmatched_new_indices.length].min
+          pair_count.times do |i|
+            old_piece = unmatched_old[i]
+            idx = unmatched_new_indices[i]
+            new_piece = new_grouped[idx]
             transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
             new_piece[:invertida] = piece_invertida?(old_piece)
-          elsif !unmatched_new_indices.empty? && unmatched_old.length == unmatched_new_indices.length
-            unmatched_new_indices.each_with_index do |idx, i|
-              old_piece = unmatched_old[i]
-              new_piece = new_grouped[idx]
-              transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
-              new_piece[:invertida] = piece_invertida?(old_piece)
-            end
+            matched_new[idx] = true
           end
 
           new_grouped.each do |np|
@@ -618,16 +646,27 @@ module BiraEstudio
           new_grouped
         end
 
+        def piece_similar_modification?(old_piece, new_piece)
+          old_piece[:width].to_i == new_piece[:width].to_i &&
+            old_piece[:thickness].to_i == new_piece[:thickness].to_i &&
+            (old_piece[:color] || '#FFFFFF').to_s.strip.upcase == (new_piece[:color] || '#FFFFFF').to_s.strip.upcase
+        end
+
         def assign_missing_entity_piece_uids(module_entity, entry)
           scanner = ScanModuleTool.new
           raw_pieces = scanner.collect_pieces(module_entity)
           return if raw_pieces.empty?
 
           available_uids_by_key = {}
+          available_uids_by_nc = {}
           entry[:pieces].each do |piece|
             key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
+            nc = dim_key_no_color(piece[:length], piece[:width], piece[:thickness])
+            uid = piece[:uid].to_s
             available_uids_by_key[key] ||= []
-            available_uids_by_key[key] << piece[:uid].to_s
+            available_uids_by_key[key] << uid
+            available_uids_by_nc[nc] ||= []
+            available_uids_by_nc[nc] << uid
           end
 
           groups = {}
@@ -648,10 +687,16 @@ module BiraEstudio
 
           groups.each do |key, entities|
             pool = (available_uids_by_key[key] || []).dup
+            nc = key.split(',')[0..2].join(',')
+            nc_pool = (available_uids_by_nc[nc] || []).dup
+
             entities.each do |entity|
               next unless entity_piece_uid(entity).empty?
 
               uid = pool.shift
+              if uid.nil? || uid.empty?
+                uid = nc_pool.shift
+              end
               uid = generate_piece_uid if uid.nil? || uid.empty?
               entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, uid)
             end
