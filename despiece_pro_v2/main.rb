@@ -398,6 +398,10 @@ module BiraEstudio
           "#{length},#{width},#{thickness},#{color}"
         end
 
+        def dim_key_no_color(length, width, thickness)
+          "#{length.to_i},#{width.to_i},#{thickness.to_i}"
+        end
+
         def module_acronym(name)
           name = name.to_s.strip
           return '' if name.empty? || name == 'Grupo sin nombre'
@@ -827,10 +831,6 @@ module BiraEstudio
           scanner = BiraEstudio::DespieceProV2::ScanModuleTool.new
           report = { added: [], removed: [], changed: [], skipped: [] }
 
-          dim_key_no_color = lambda do |length, width, thickness|
-            "#{length.to_i},#{width.to_i},#{thickness.to_i}"
-          end
-
           @modules.each do |entry|
             uid = entry[:uid]
             entity = uid_map[uid]
@@ -840,7 +840,13 @@ module BiraEstudio
               next
             end
 
-            assign_missing_entity_piece_uids(entity, entry)
+            begin
+              assign_missing_entity_piece_uids(entity, entry)
+            rescue StandardError => e
+              puts "Despiece PRO refresh: error asignando uids en #{entry[:name]} - #{e.class}: #{e.message}"
+              report[:skipped] << { module_name: entry[:name], reason: "error al asignar uids: #{e.message}" }
+              next
+            end
 
             begin
               pieces = scanner.collect_pieces(entity)
@@ -856,32 +862,32 @@ module BiraEstudio
               next
             end
 
-            old_keys = entry[:pieces].map { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) }
-            new_keys = new_grouped.map { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) }
+            old_keys = entry[:pieces].map { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) }
+            new_keys = new_grouped.map { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) }
 
             added_keys = new_keys - old_keys
             removed_keys = old_keys - new_keys
             changed_keys = (old_keys & new_keys).select do |k|
-              old_p = entry[:pieces].find { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) == k }
-              new_p = new_grouped.find { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) == k }
+              old_p = entry[:pieces].find { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) == k }
+              new_p = new_grouped.find { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) == k }
               old_p && new_p && old_p[:count] != new_p[:count]
             end
 
             added_keys.each do |k|
-              p = new_grouped.find { |np| dim_key_no_color.call(np[:length], np[:width], np[:thickness]) == k }
+              p = new_grouped.find { |np| dim_key_no_color(np[:length], np[:width], np[:thickness]) == k }
               name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:added] << { module_name: entry[:name], piece: p, name: name }
             end
 
             removed_keys.each do |k|
-              p = entry[:pieces].find { |op| dim_key_no_color.call(op[:length], op[:width], op[:thickness]) == k }
+              p = entry[:pieces].find { |op| dim_key_no_color(op[:length], op[:width], op[:thickness]) == k }
               name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:removed] << { module_name: entry[:name], piece: p, name: name }
             end
 
             changed_keys.each do |k|
-              old_p = entry[:pieces].find { |op| dim_key_no_color.call(op[:length], op[:width], op[:thickness]) == k }
-              new_p = new_grouped.find { |np| dim_key_no_color.call(np[:length], np[:width], np[:thickness]) == k }
+              old_p = entry[:pieces].find { |op| dim_key_no_color(op[:length], op[:width], op[:thickness]) == k }
+              new_p = new_grouped.find { |np| dim_key_no_color(np[:length], np[:width], np[:thickness]) == k }
               name = (entry[:piece_names] || {})[old_p[:uid].to_s].to_s
               report[:changed] << { module_name: entry[:name], old: old_p, new: new_p, name: name }
             end
@@ -976,12 +982,22 @@ module BiraEstudio
               badge_color: entry['badge_color'] || DEFAULT_BADGE_COLOR
             }
             migrate_piece_metadata!(module_entry)
-            assign_missing_entity_piece_uids(entity, module_entry) if entity && entity.valid?
+            if entity && entity.valid?
+              begin
+                assign_missing_entity_piece_uids(entity, module_entry)
+              rescue StandardError => e
+                puts "Despiece PRO: error asignando uids en modulo #{entry['name']} (#{uid}) - #{e.class}: #{e.message}"
+              end
+            end
             @modules << module_entry
             restored_count += 1
           end
 
-          relink_module_entities(model)
+          begin
+            relink_module_entities(model)
+          rescue StandardError => e
+            puts "Despiece PRO: error al relinkear modulos - #{e.class}: #{e.message}"
+          end
 
           puts "Despiece PRO: #{restored_count} modulos restaurados de #{modules_data.length}"
           restored_count
@@ -991,8 +1007,8 @@ module BiraEstudio
           0
         rescue StandardError => e
           puts "Despiece PRO: error al restaurar - #{e.class}: #{e.message}"
-          reset_state!
-          0
+          # No vaciar @modules: un fallo puntual no debe borrar el despiece ya cargado.
+          @modules.length
         end
 
         def parse_saved_state(raw)
