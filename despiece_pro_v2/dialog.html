@@ -215,13 +215,21 @@ body{
     color:#dbe4f2;
     font-size:13px;
     font-weight:400;
+    flex:1 1 auto;
     min-width:0;
     overflow:hidden;
     text-overflow:ellipsis;
 }
 
-.extra-btn{
+.piece-actions{
+    display:flex;
+    align-items:center;
+    flex-shrink:0;
     margin-left:auto;
+    gap:6px;
+}
+
+.extra-btn{
     flex-shrink:0;
     cursor:pointer;
 }
@@ -229,7 +237,7 @@ body{
     flex-shrink:0;
     width:22px;
     height:22px;
-    margin-left:8px;
+    margin-left:0;
     padding:0;
     border:1px solid rgba(255,255,255,.28);
     border-radius:4px;
@@ -256,10 +264,27 @@ body{
     border-style:solid;
     border-width:3px;
     background:rgba(255,255,255,.06);
-    margin-left:6px;
+    margin-left:0;
 }
 .canto-preview:hover{
     background:rgba(255,255,255,.14);
+}
+.locate-btn{
+    width:22px;
+    height:22px;
+    margin-left:0;
+    padding:0;
+    border:1px solid rgba(255,255,255,.28);
+    border-radius:4px;
+    background:rgba(255,255,255,.06);
+    color:#d8c4cf;
+    font-size:14px;
+    line-height:20px;
+    text-align:center;
+}
+.locate-btn:hover{
+    background:rgba(255,255,255,.12);
+    color:#fff;
 }
 
 /* ==========================================
@@ -702,6 +727,12 @@ body{
         }
     };
 
+    window.locatePiece = function(uid, pieceUid){
+        if(window.sketchup && sketchup.locate_piece){
+            sketchup.locate_piece(uid, pieceUid);
+        }
+    };
+
     document.addEventListener('click', function(e){
 
         var invertBtn = findParentByClass(e.target, 'invert-btn');
@@ -721,6 +752,20 @@ body{
                 sketchup.toggle_invertida(uidInv, pieceUidInv);
             }
 
+            return;
+        }
+
+        var locateBtn = findParentByClass(e.target, 'locate-btn');
+
+        if(locateBtn){
+
+            var uidLoc =
+                locateBtn.getAttribute('data-uid');
+
+            var pieceUidLoc =
+                locateBtn.getAttribute('data-piece-uid');
+
+            locatePiece(uidLoc, pieceUidLoc);
             return;
         }
 

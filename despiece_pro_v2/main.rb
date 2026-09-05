@@ -385,9 +385,12 @@ module BiraEstudio
             '<div class="dimensions">' + dims + '</div>' +
             '<div><span class="badge" style="color:' + color + ';">' + escape_html(acronym) + '</span></div>' +
             '<div class="piece-name">' + escape_html(piece_name) + '</div>' +
-            '<button type="button" class="' + invert_class + '" title="Invertir dimensiones" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '">&#8644;</button>' +
-            '<div class="extra-btn canto-preview" title="Tapacantos" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '" ' +
-            'style="border-top-color:' + canto_color(disp_cantos[:arr]) + ';border-bottom-color:' + canto_color(disp_cantos[:aba]) + ';border-left-color:' + canto_color(disp_cantos[:izq]) + ';border-right-color:' + canto_color(disp_cantos[:der]) + ';"></div>' +
+            '<div class="piece-actions">' +
+              '<button type="button" class="' + invert_class + '" title="Invertir dimensiones" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '">&#8644;</button>' +
+              '<div class="extra-btn canto-preview" title="Tapacantos" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '" ' +
+              'style="border-top-color:' + canto_color(disp_cantos[:arr]) + ';border-bottom-color:' + canto_color(disp_cantos[:aba]) + ';border-left-color:' + canto_color(disp_cantos[:izq]) + ';border-right-color:' + canto_color(disp_cantos[:der]) + ';"></div>' +
+              '<button type="button" class="extra-btn locate-btn" title="Localizar pieza" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '">&#9678;</button>' +
+            '</div>' +
             '</div>'
         end
 
@@ -492,6 +495,24 @@ module BiraEstudio
           uid.to_s.strip
         rescue StandardError
           ''
+        end
+
+        def find_entities_for_piece(uid, piece_uid)
+          uid = uid.to_s.strip
+          piece_uid = piece_uid.to_s.strip
+          return [] if uid.empty? || piece_uid.empty?
+
+          model = Sketchup.active_model
+          return [] unless model
+
+          uid_map = build_uid_entity_map(model)
+          module_entity = uid_map[uid]
+          return [] unless module_entity && module_entity.valid?
+
+          scanner = ScanModuleTool.new
+          scanner.collect_pieces(module_entity).select do |entity|
+            entity.valid? && entity_piece_uid(entity) == piece_uid
+          end
         end
 
         def ensure_piece_uid(entity)
@@ -1782,6 +1803,18 @@ module BiraEstudio
           dialog.add_action_callback('toggle_invertida') do |_context, uid, piece_uid|
             Store.toggle_piece_invertida(uid, piece_uid)
             refresh
+          end
+
+          dialog.add_action_callback('locate_piece') do |_context, uid, piece_uid|
+            entities = Store.find_entities_for_piece(uid, piece_uid)
+            if entities.empty?
+              UI.messagebox('No se encontro la pieza en el modelo actual.')
+            else
+              model = Sketchup.active_model
+              model.selection.clear
+              model.selection.add(entities)
+              model.active_view.zoom(entities)
+            end
           end
 
           dialog.add_action_callback('update_module_badge_color') do |_context, entity_id, color|
