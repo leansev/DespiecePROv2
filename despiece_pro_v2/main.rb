@@ -525,16 +525,58 @@ module BiraEstudio
         end
 
         def generate_piece_uid
-          "pie_#{Time.now.to_i}_#{rand(10000)}"
+          @piece_uid_seq = (@piece_uid_seq || 0) + 1
+          "pie_#{Time.now.to_i}_#{@piece_uid_seq}_#{rand(100_000)}"
         end
 
         def unify_group_piece_uid(entities)
-          uids = entities.map { |entity| ensure_piece_uid(entity) }.uniq
-          canonical = uids.min
+          return '' if entities.nil? || entities.empty?
+
+          existing = entities.map { |entity| entity_piece_uid(entity) }.reject(&:empty?).uniq
+          canonical = if existing.length == 1
+                        existing[0]
+                      elsif existing.empty?
+                        generate_piece_uid
+                      else
+                        # Mismo grupo dimensional con uids distintos: conservar el primero.
+                        existing[0]
+                      end
+
           entities.each do |entity|
             entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, canonical)
           end
           canonical
+        end
+
+        # Repara piece_uids duplicados entre dimensiones/colores distintas en un modulo.
+        # Conserva piece_names/piece_cantos solo en la primera ocurrencia del uid.
+        def repair_duplicate_piece_uids!(entry)
+          return unless entry && entry[:pieces].is_a?(Array)
+
+          seen = {}
+          entry[:pieces].each do |piece|
+            uid = piece[:uid].to_s.strip
+            if uid.empty?
+              piece[:uid] = generate_piece_uid
+              uid = piece[:uid].to_s
+            end
+
+            dim = piece_dim_key(
+              piece[:length],
+              piece[:width],
+              piece[:thickness],
+              piece[:color] || '#FFFFFF'
+            )
+
+            if seen.key?(uid) && seen[uid] != dim
+              new_uid = generate_piece_uid
+              puts "Despiece PRO: reparando piece_uid duplicado #{uid} -> #{new_uid} (#{dim})"
+              piece[:uid] = new_uid
+              seen[new_uid] = dim
+            else
+              seen[uid] = dim unless seen.key?(uid)
+            end
+          end
         end
 
         def migrate_piece_metadata!(entry)
@@ -683,21 +725,17 @@ module BiraEstudio
           return if raw_pieces.empty?
 
           available_uids_by_key = {}
-          available_uids_by_nc = {}
           entry[:pieces].each do |piece|
             key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
-            nc = dim_key_no_color(piece[:length], piece[:width], piece[:thickness])
             uid = piece[:uid].to_s
+            next if uid.empty?
+
             available_uids_by_key[key] ||= []
-            available_uids_by_key[key] << uid
-            available_uids_by_nc[nc] ||= []
-            available_uids_by_nc[nc] << uid
+            available_uids_by_key[key] << uid unless available_uids_by_key[key].include?(uid)
           end
 
           groups = {}
           raw_pieces.each do |entity|
-            next unless entity_piece_uid(entity).empty?
-
             begin
               dims = DimHelpers.piece_dimensions_mm(entity)
               color = DimHelpers.piece_color_hex(entity)
@@ -710,19 +748,27 @@ module BiraEstudio
             end
           end
 
+          claimed = {}
           groups.each do |key, entities|
-            pool = (available_uids_by_key[key] || []).dup
-            nc = key.split(',')[0..2].join(',')
-            nc_pool = (available_uids_by_nc[nc] || []).dup
+            uid = nil
+            (available_uids_by_key[key] || []).each do |candidate|
+              next if candidate.nil? || candidate.empty? || claimed[candidate]
+
+              uid = candidate
+              break
+            end
+
+            if uid.nil? || uid.empty?
+              existing = entities.map { |entity| entity_piece_uid(entity) }.reject(&:empty?).uniq
+              if existing.length == 1 && !claimed[existing[0]]
+                uid = existing[0]
+              end
+            end
+
+            uid = generate_piece_uid if uid.nil? || uid.empty? || claimed[uid]
+            claimed[uid] = true
 
             entities.each do |entity|
-              next unless entity_piece_uid(entity).empty?
-
-              uid = pool.shift
-              if uid.nil? || uid.empty?
-                uid = nc_pool.shift
-              end
-              uid = generate_piece_uid if uid.nil? || uid.empty?
               entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, uid)
             end
           end
@@ -862,6 +908,7 @@ module BiraEstudio
             end
 
             begin
+              repair_duplicate_piece_uids!(entry)
               assign_missing_entity_piece_uids(entity, entry)
             rescue StandardError => e
               puts "Despiece PRO refresh: error asignando uids en #{entry[:name]} - #{e.class}: #{e.message}"
@@ -1003,6 +1050,7 @@ module BiraEstudio
               badge_color: entry['badge_color'] || DEFAULT_BADGE_COLOR
             }
             migrate_piece_metadata!(module_entry)
+            repair_duplicate_piece_uids!(module_entry)
             if entity && entity.valid?
               begin
                 assign_missing_entity_piece_uids(entity, module_entry)
