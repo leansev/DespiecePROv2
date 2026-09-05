@@ -1,3 +1,83 @@
+# DIAGNOSTICO_REFRESH
+
+Archivo generado para análisis externo de un bug relacionado con refresh / preservación de nombre y cantos.
+
+Fuente de prompts: historial de chat del agente Cursor en este repo ([refresh metadata](e99a0956-6092-4631-8700-88cd058362e4)).
+
+---
+
+## 1. CONTEXTO DEL PEDIDO ORIGINAL
+
+A continuación, los prompts textuales del usuario relacionados con implementar/arreglar el refresh que preserva nombre y canto (y metadatos asociados) al cambiar medidas, tal como aparecen en el historial de chat.
+
+### Prompt 1
+
+```
+Repo: D:\PROGRAMAS\Pluggins mios para skechup\DespiecePROv2\despiece_pro_v2\
+BUG: al modificar una pieza (cambio de medida o de textura/color), se 
+pierden los parámetros ya asignados a esa pieza: nombre (piece_names), 
+tapacanto (piece_cantos) y estado de invertida. Vuelven a su default 
+como si fuera una pieza nueva. Solo debe perderse esa info si la 
+pieza se ELIMINA — si solo se modifica un atributo (medida o 
+textura), los parámetros ya cargados tienen que conservarse.
+PASO 1 — DIAGNÓSTICO (hacer antes de tocar nada):
+Revisar en main.rb (class Store) cómo se identifica cada pieza 
+agrupada y cómo se relacionan con eso piece_names{}, piece_cantos{} 
+e invertida. Hipótesis a confirmar o descartar: si la clave usada 
+para esos diccionarios está compuesta por dimensiones y/o color 
+(ej. "length_width_thickness_color"), al cambiar cualquiera de esos 
+valores la pieza pasa a tener una clave nueva, el lookup en 
+piece_names/piece_cantos falla, y por eso se resetea todo — no 
+porque se haya "borrado" la pieza sino porque cambió su clave.
+Confirmar el mecanismo real (puede ser este u otro) antes de aplicar 
+el fix.
+PASO 2 — FIX:
+Si el diagnóstico confirma la hipótesis: introducir un identificador 
+estable por pieza (uid) que NO dependa de largo/ancho/espesor/color, 
+y usar ese uid como clave de piece_names, piece_cantos e invertida 
+en vez de una clave derivada de esos atributos. Al modificarse 
+medida o textura, el uid se mantiene y los parámetros asociados 
+persisten. Solo al eliminar la pieza (uid ya no existe en la lista 
+actual) se debe descartar su entrada en esos diccionarios.
+Si el mecanismo real es otro, aplicar la solución equivalente que 
+logre el mismo resultado: conservar nombre/canto/invertida mientras 
+la pieza siga existiendo, sin importar qué atributo se le cambie.
+PASO 3 — VERIFICAR EFECTOS COLATERALES:
+Revisar que este cambio no rompa refresh_all_modules, serialize_state/
+deserialize_pieces, ni el export_payload (ExcelExporter, 
+export_excel.py, export_cortecloud.py) — todos deben seguir 
+funcionando con el nuevo esquema de identificación.
+PASO 4 — DEJAR LISTO PARA PROBAR Y SUBIR:
+- Copiar los archivos modificados a Plugins/despiece_pro_v2/ para 
+  prueba en caliente.
+- Hacer commit con mensaje descriptivo del fix y push a 
+  github.com/leansev/DespiecePROv2 (branch master).
+- Regenerar instalable/DespiecePROv2_v2.0.0.rbz con build_rbz.py.
+- Reportar qué mecanismo causaba el bug y qué cambiaste exactamente.
+No modificar despiece_pro (original).
+```
+
+### Prompt 2
+
+```
+necesito que arregles, si se abre un archivo con ya un despiece hecho y le pongo refresh se elimina todo lo cargado
+```
+
+### Prompt 3
+
+```
+revisalo portque sigue haciendolo
+```
+
+---
+
+## 2. CÓDIGO COMPLETO Y ACTUAL
+
+Los cuatro archivos solicitados existen con esos nombres exactos. Contenido íntegro al momento de generar este diagnóstico:
+
+### `despiece_pro_v2/main.rb`
+
+```ruby
 # despiece_pro_v2/main.rb
 # Logica principal del plugin Despiece PRO v2
 
@@ -384,13 +464,10 @@ module BiraEstudio
             '<div class="qty">' + count.to_s + 'x</div>' +
             '<div class="dimensions">' + dims + '</div>' +
             '<div><span class="badge" style="color:' + color + ';">' + escape_html(acronym) + '</span></div>' +
-            '<div class="extra-btn canto-preview" title="Tapacantos" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '" ' +
-            'style="margin-left:14px;margin-right:14px;border-top-color:' + canto_color(disp_cantos[:arr]) + ';border-bottom-color:' + canto_color(disp_cantos[:aba]) + ';border-left-color:' + canto_color(disp_cantos[:izq]) + ';border-right-color:' + canto_color(disp_cantos[:der]) + ';"></div>' +
             '<div class="piece-name">' + escape_html(piece_name) + '</div>' +
-            '<div class="piece-actions">' +
-              '<button type="button" class="' + invert_class + '" title="Invertir dimensiones" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '">&#8644;</button>' +
-              '<button type="button" class="extra-btn locate-btn" title="Localizar pieza" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '">&#9678;</button>' +
-            '</div>' +
+            '<button type="button" class="' + invert_class + '" title="Invertir dimensiones" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '">&#8644;</button>' +
+            '<div class="extra-btn canto-preview" title="Tapacantos" data-uid="' + escape_html(uid.to_s) + '" data-piece-uid="' + escape_html(piece_uid) + '" ' +
+            'style="border-top-color:' + canto_color(disp_cantos[:arr]) + ';border-bottom-color:' + canto_color(disp_cantos[:aba]) + ';border-left-color:' + canto_color(disp_cantos[:izq]) + ';border-right-color:' + canto_color(disp_cantos[:der]) + ';"></div>' +
             '</div>'
         end
 
@@ -399,10 +476,6 @@ module BiraEstudio
           color = '#FFFFFF' if color.empty?
 
           "#{length},#{width},#{thickness},#{color}"
-        end
-
-        def dim_key_no_color(length, width, thickness)
-          "#{length.to_i},#{width.to_i},#{thickness.to_i}"
         end
 
         def module_acronym(name)
@@ -497,24 +570,6 @@ module BiraEstudio
           ''
         end
 
-        def find_entities_for_piece(uid, piece_uid)
-          uid = uid.to_s.strip
-          piece_uid = piece_uid.to_s.strip
-          return [] if uid.empty? || piece_uid.empty?
-
-          model = Sketchup.active_model
-          return [] unless model
-
-          uid_map = build_uid_entity_map(model)
-          module_entity = uid_map[uid]
-          return [] unless module_entity && module_entity.valid?
-
-          scanner = ScanModuleTool.new
-          scanner.collect_pieces(module_entity).select do |entity|
-            entity.valid? && entity_piece_uid(entity) == piece_uid
-          end
-        end
-
         def ensure_piece_uid(entity)
           uid = entity_piece_uid(entity)
           return uid unless uid.empty?
@@ -525,58 +580,16 @@ module BiraEstudio
         end
 
         def generate_piece_uid
-          @piece_uid_seq = (@piece_uid_seq || 0) + 1
-          "pie_#{Time.now.to_i}_#{@piece_uid_seq}_#{rand(100_000)}"
+          "pie_#{Time.now.to_i}_#{rand(10000)}"
         end
 
         def unify_group_piece_uid(entities)
-          return '' if entities.nil? || entities.empty?
-
-          existing = entities.map { |entity| entity_piece_uid(entity) }.reject(&:empty?).uniq
-          canonical = if existing.length == 1
-                        existing[0]
-                      elsif existing.empty?
-                        generate_piece_uid
-                      else
-                        # Mismo grupo dimensional con uids distintos: conservar el primero.
-                        existing[0]
-                      end
-
+          uids = entities.map { |entity| ensure_piece_uid(entity) }.uniq
+          canonical = uids.min
           entities.each do |entity|
             entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, canonical)
           end
           canonical
-        end
-
-        # Repara piece_uids duplicados entre dimensiones/colores distintas en un modulo.
-        # Conserva piece_names/piece_cantos solo en la primera ocurrencia del uid.
-        def repair_duplicate_piece_uids!(entry)
-          return unless entry && entry[:pieces].is_a?(Array)
-
-          seen = {}
-          entry[:pieces].each do |piece|
-            uid = piece[:uid].to_s.strip
-            if uid.empty?
-              piece[:uid] = generate_piece_uid
-              uid = piece[:uid].to_s
-            end
-
-            dim = piece_dim_key(
-              piece[:length],
-              piece[:width],
-              piece[:thickness],
-              piece[:color] || '#FFFFFF'
-            )
-
-            if seen.key?(uid) && seen[uid] != dim
-              new_uid = generate_piece_uid
-              puts "Despiece PRO: reparando piece_uid duplicado #{uid} -> #{new_uid} (#{dim})"
-              piece[:uid] = new_uid
-              seen[new_uid] = dim
-            else
-              seen[uid] = dim unless seen.key?(uid)
-            end
-          end
         end
 
         def migrate_piece_metadata!(entry)
@@ -725,17 +738,21 @@ module BiraEstudio
           return if raw_pieces.empty?
 
           available_uids_by_key = {}
+          available_uids_by_nc = {}
           entry[:pieces].each do |piece|
             key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
+            nc = dim_key_no_color(piece[:length], piece[:width], piece[:thickness])
             uid = piece[:uid].to_s
-            next if uid.empty?
-
             available_uids_by_key[key] ||= []
-            available_uids_by_key[key] << uid unless available_uids_by_key[key].include?(uid)
+            available_uids_by_key[key] << uid
+            available_uids_by_nc[nc] ||= []
+            available_uids_by_nc[nc] << uid
           end
 
           groups = {}
           raw_pieces.each do |entity|
+            next unless entity_piece_uid(entity).empty?
+
             begin
               dims = DimHelpers.piece_dimensions_mm(entity)
               color = DimHelpers.piece_color_hex(entity)
@@ -748,27 +765,19 @@ module BiraEstudio
             end
           end
 
-          claimed = {}
           groups.each do |key, entities|
-            uid = nil
-            (available_uids_by_key[key] || []).each do |candidate|
-              next if candidate.nil? || candidate.empty? || claimed[candidate]
-
-              uid = candidate
-              break
-            end
-
-            if uid.nil? || uid.empty?
-              existing = entities.map { |entity| entity_piece_uid(entity) }.reject(&:empty?).uniq
-              if existing.length == 1 && !claimed[existing[0]]
-                uid = existing[0]
-              end
-            end
-
-            uid = generate_piece_uid if uid.nil? || uid.empty? || claimed[uid]
-            claimed[uid] = true
+            pool = (available_uids_by_key[key] || []).dup
+            nc = key.split(',')[0..2].join(',')
+            nc_pool = (available_uids_by_nc[nc] || []).dup
 
             entities.each do |entity|
+              next unless entity_piece_uid(entity).empty?
+
+              uid = pool.shift
+              if uid.nil? || uid.empty?
+                uid = nc_pool.shift
+              end
+              uid = generate_piece_uid if uid.nil? || uid.empty?
               entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, uid)
             end
           end
@@ -898,6 +907,10 @@ module BiraEstudio
           scanner = BiraEstudio::DespieceProV2::ScanModuleTool.new
           report = { added: [], removed: [], changed: [], skipped: [] }
 
+          dim_key_no_color = lambda do |length, width, thickness|
+            "#{length.to_i},#{width.to_i},#{thickness.to_i}"
+          end
+
           @modules.each do |entry|
             uid = entry[:uid]
             entity = uid_map[uid]
@@ -907,14 +920,7 @@ module BiraEstudio
               next
             end
 
-            begin
-              repair_duplicate_piece_uids!(entry)
-              assign_missing_entity_piece_uids(entity, entry)
-            rescue StandardError => e
-              puts "Despiece PRO refresh: error asignando uids en #{entry[:name]} - #{e.class}: #{e.message}"
-              report[:skipped] << { module_name: entry[:name], reason: "error al asignar uids: #{e.message}" }
-              next
-            end
+            assign_missing_entity_piece_uids(entity, entry)
 
             begin
               pieces = scanner.collect_pieces(entity)
@@ -930,32 +936,32 @@ module BiraEstudio
               next
             end
 
-            old_keys = entry[:pieces].map { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) }
-            new_keys = new_grouped.map { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) }
+            old_keys = entry[:pieces].map { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) }
+            new_keys = new_grouped.map { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) }
 
             added_keys = new_keys - old_keys
             removed_keys = old_keys - new_keys
             changed_keys = (old_keys & new_keys).select do |k|
-              old_p = entry[:pieces].find { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) == k }
-              new_p = new_grouped.find { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) == k }
+              old_p = entry[:pieces].find { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) == k }
+              new_p = new_grouped.find { |p| dim_key_no_color.call(p[:length], p[:width], p[:thickness]) == k }
               old_p && new_p && old_p[:count] != new_p[:count]
             end
 
             added_keys.each do |k|
-              p = new_grouped.find { |np| dim_key_no_color(np[:length], np[:width], np[:thickness]) == k }
+              p = new_grouped.find { |np| dim_key_no_color.call(np[:length], np[:width], np[:thickness]) == k }
               name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:added] << { module_name: entry[:name], piece: p, name: name }
             end
 
             removed_keys.each do |k|
-              p = entry[:pieces].find { |op| dim_key_no_color(op[:length], op[:width], op[:thickness]) == k }
+              p = entry[:pieces].find { |op| dim_key_no_color.call(op[:length], op[:width], op[:thickness]) == k }
               name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:removed] << { module_name: entry[:name], piece: p, name: name }
             end
 
             changed_keys.each do |k|
-              old_p = entry[:pieces].find { |op| dim_key_no_color(op[:length], op[:width], op[:thickness]) == k }
-              new_p = new_grouped.find { |np| dim_key_no_color(np[:length], np[:width], np[:thickness]) == k }
+              old_p = entry[:pieces].find { |op| dim_key_no_color.call(op[:length], op[:width], op[:thickness]) == k }
+              new_p = new_grouped.find { |np| dim_key_no_color.call(np[:length], np[:width], np[:thickness]) == k }
               name = (entry[:piece_names] || {})[old_p[:uid].to_s].to_s
               report[:changed] << { module_name: entry[:name], old: old_p, new: new_p, name: name }
             end
@@ -1050,23 +1056,12 @@ module BiraEstudio
               badge_color: entry['badge_color'] || DEFAULT_BADGE_COLOR
             }
             migrate_piece_metadata!(module_entry)
-            repair_duplicate_piece_uids!(module_entry)
-            if entity && entity.valid?
-              begin
-                assign_missing_entity_piece_uids(entity, module_entry)
-              rescue StandardError => e
-                puts "Despiece PRO: error asignando uids en modulo #{entry['name']} (#{uid}) - #{e.class}: #{e.message}"
-              end
-            end
+            assign_missing_entity_piece_uids(entity, module_entry) if entity && entity.valid?
             @modules << module_entry
             restored_count += 1
           end
 
-          begin
-            relink_module_entities(model)
-          rescue StandardError => e
-            puts "Despiece PRO: error al relinkear modulos - #{e.class}: #{e.message}"
-          end
+          relink_module_entities(model)
 
           puts "Despiece PRO: #{restored_count} modulos restaurados de #{modules_data.length}"
           restored_count
@@ -1076,8 +1071,8 @@ module BiraEstudio
           0
         rescue StandardError => e
           puts "Despiece PRO: error al restaurar - #{e.class}: #{e.message}"
-          # No vaciar @modules: un fallo puntual no debe borrar el despiece ya cargado.
-          @modules.length
+          reset_state!
+          0
         end
 
         def parse_saved_state(raw)
@@ -1853,18 +1848,6 @@ module BiraEstudio
             refresh
           end
 
-          dialog.add_action_callback('locate_piece') do |_context, uid, piece_uid|
-            entities = Store.find_entities_for_piece(uid, piece_uid)
-            if entities.empty?
-              UI.messagebox('No se encontro la pieza en el modelo actual.')
-            else
-              model = Sketchup.active_model
-              model.selection.clear
-              model.selection.add(entities)
-              model.active_view.zoom(entities)
-            end
-          end
-
           dialog.add_action_callback('update_module_badge_color') do |_context, entity_id, color|
             Store.update_module_badge_color(entity_id, color)
           end
@@ -2188,3 +2171,1741 @@ module BiraEstudio
     end
   end
 end
+```
+
+### `despiece_pro_v2/dialog.html`
+
+```html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Despiece PRO</title>
+
+<style>
+
+html,
+body{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:#1a2a4a;
+    font-family:"Segoe UI", Arial, sans-serif;
+    color:#eef3ff;
+    overflow:hidden;
+}
+
+#app{
+    width:100%;
+    height:100%;
+    background:#1a2a4a;
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:12px;
+    overflow:auto;
+    box-sizing:border-box;
+}
+
+.top-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 10px 0 10px;
+}
+.top-bar-btn {
+  flex: 1;
+  padding: 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: #eef3ff;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+}
+.top-bar-btn:hover {
+  background: rgba(255,255,255,0.14);
+}
+
+/* ==========================================
+   MÓDULOS
+========================================== */
+
+.module{
+    margin:8px 10px;
+    margin-bottom:10px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:8px;
+    overflow:hidden;
+}
+
+.module:first-child{
+    border-top:none;
+}
+
+.module-header{
+    display:flex;
+    align-items:center;
+    padding:8px 12px;
+    min-height:34px;
+    cursor:pointer;
+}
+
+.module-body{
+    display:none;
+}
+
+.module.open .module-body{
+    display:block;
+}
+
+.module-header-left{
+    display:flex;
+    align-items:center;
+    flex:1;
+    min-width:0;
+}
+
+.module-code{
+    font-size:16px;
+    font-weight:700;
+    line-height:1;
+}
+
+.module-separator{
+    margin:0 14px;
+    color:rgba(255,255,255,.85);
+    font-size:18px;
+}
+
+.module-name{
+    flex:1;
+    font-size:14px;
+    font-weight:500;
+    color:#eef3ff;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.module-pieces-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 12px 6px 12px;
+}
+
+.module-pieces{
+    color:#ffd54a;
+    font-size:15px;
+    font-weight:600;
+    white-space:nowrap;
+}
+
+.delete-btn{
+    border:none;
+    background:none;
+    color:#dbe4f2;
+    cursor:pointer;
+    font-size:16px;
+    padding:0;
+    line-height:1;
+}
+
+.delete-btn:hover{
+    color:#ffffff;
+}
+
+.edit-btn{
+    border:none;
+    background:none;
+    color:#ffffff;
+    font-size:16px;
+    cursor:pointer;
+    padding:0;
+    width:20px;
+    height:20px;
+    line-height:20px;
+    text-align:center;
+    flex-shrink:0;
+    margin-left:auto;
+}
+
+.edit-btn:hover{
+    opacity:.9;
+}
+
+/* ==========================================
+   FILAS
+========================================== */
+
+.piece-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:6px 12px;
+    border-top:1px solid rgba(255,255,255,.08);
+    white-space:nowrap;
+}
+
+.color-chip{
+    width:14px;
+    height:14px;
+    border:1px solid rgba(255,255,255,.35);
+    border-radius:3px;
+    flex-shrink:0;
+    box-sizing:border-box;
+    margin-right:10px;
+}
+
+.qty{
+    font-family:Consolas, monospace;
+    font-size:14px;
+    font-weight:500;
+    width:34px;
+    flex-shrink:0;
+}
+
+.dimensions{
+    font-family:Consolas, monospace;
+    font-size:14px;
+    font-weight:500;
+    color:#f1f4fa;
+    width:clamp(150px, 42vw, 230px);
+    flex-shrink:1;
+}
+
+.badge{
+    display:inline-block;
+    min-width:28px;
+    text-align:center;
+    padding:1px 5px;
+    margin-left:12px;
+    margin-right:12px;
+    border-radius:4px;
+    border:1px solid currentColor;
+    font-size:10px;
+    font-weight:600;
+    background:rgba(255,255,255,.02);
+}
+
+.piece-name{
+    color:#dbe4f2;
+    font-size:13px;
+    font-weight:400;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+
+.extra-btn{
+    margin-left:auto;
+    flex-shrink:0;
+    cursor:pointer;
+}
+.invert-btn{
+    flex-shrink:0;
+    width:22px;
+    height:22px;
+    margin-left:8px;
+    padding:0;
+    border:1px solid rgba(255,255,255,.28);
+    border-radius:4px;
+    background:rgba(255,255,255,.06);
+    color:#d8c4cf;
+    font-size:13px;
+    line-height:20px;
+    text-align:center;
+    cursor:pointer;
+}
+.invert-btn:hover{
+    background:rgba(255,255,255,.12);
+    color:#fff;
+}
+.invert-btn.is-active{
+    border-color:#B05CFF;
+    background:rgba(176,92,255,.22);
+    color:#FF8A3D;
+}
+.canto-preview{
+    width:18px;
+    height:18px;
+    box-sizing:border-box;
+    border-style:solid;
+    border-width:3px;
+    background:rgba(255,255,255,.06);
+    margin-left:6px;
+}
+.canto-preview:hover{
+    background:rgba(255,255,255,.14);
+}
+
+/* ==========================================
+   EDICIÓN
+========================================== */
+
+.module.editing .module-name,
+.module.editing .piece-name{
+    background:rgba(255,255,255,.08);
+    border-radius:4px;
+    padding:2px 6px;
+}
+
+[contenteditable="true"]{
+    outline:none;
+}
+
+/* ==========================================
+   FOOTER
+========================================== */
+
+.footer{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    padding:10px 14px;
+
+    border-top:1px solid rgba(255,255,255,.08);
+}
+
+.total{
+    color:#ffd54a;
+    font-size:14px;
+    font-weight:600;
+}
+
+.footer-actions{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:6px;
+}
+
+.export-btn{
+    background:none;
+    border:1px solid rgba(255,255,255,.25);
+    color:#dbe4f2;
+    cursor:pointer;
+    font-size:13px;
+    padding:4px 10px;
+    border-radius:4px;
+}
+
+.export-btn:hover{
+    color:#ffffff;
+    border-color:rgba(255,255,255,.45);
+}
+
+
+@media (max-width:520px){
+    .module{
+        margin:6px 8px;
+    }
+
+    .module-header{
+        padding:7px 10px;
+    }
+
+    .piece-row{
+        gap:8px;
+        padding:5px 10px;
+    }
+
+    .qty{
+        width:28px;
+        font-size:13px;
+    }
+
+    .dimensions{
+        width:clamp(135px, 45vw, 190px);
+        font-size:13px;
+    }
+
+    .badge{
+        min-width:24px;
+        padding:1px 4px;
+        margin-left:8px;
+        margin-right:8px;
+        font-size:9px;
+    }
+
+    .piece-name{
+        font-size:12px;
+    }
+
+    .footer{
+        padding:9px 12px;
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="app">
+
+    <div class="top-bar">
+      <button class="top-bar-btn" onclick="refreshAll();">🔄 Refresh</button>
+      <button class="top-bar-btn" onclick="openInfo();">ℹ Info Placas</button>
+    </div>
+
+    %CONTENT%
+
+    <div class="footer">
+        <div class="total">
+            TOTAL: %TOTAL% piezas
+        </div>
+        <div class="footer-actions">
+            <button class="export-btn" onclick="exportExcel('clasico');">
+                📊 Exportar Excel
+            </button>
+            <button class="export-btn" onclick="exportExcel('cortecloud');">
+                ☁️ Exportar CorteCloud
+            </button>
+            <button class="export-btn" onclick="saveState();">
+                💾 Guardar
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+
+(function(){
+
+    var app = document.getElementById('app');
+
+    if(app){
+        var savedScroll = window.__scrollTop || 0;
+        if(savedScroll > 0){
+            app.scrollTop = savedScroll;
+        }
+        app.addEventListener('scroll', function(){
+            window.__scrollTop = app.scrollTop;
+        });
+    }
+
+    function findParentByClass(el, className){
+        while(el && el !== document.body){
+            if(el.classList && el.classList.contains(className)){
+                return el;
+            }
+            el = el.parentNode;
+        }
+        return null;
+    }
+
+
+    function bindClearDefaultText(module){
+
+        var names =
+            module.querySelectorAll('.module-name');
+
+        for(var i=0;i<names.length;i++){
+
+            names[i].onfocus = function(){
+
+                var editing =
+                    module.getAttribute('data-editing') === 'true';
+
+                if(!editing){
+                    return;
+                }
+
+                var text = trim(this.innerText).toLowerCase();
+
+                if(
+                    text === 'grupo sin nombre' ||
+                    text === 'grupo sin nombre.' ||
+                    text === 'sin nombre'
+                ){
+                    this.innerText = '';
+                }
+            };
+        }
+    }
+
+    function enableEdit(module){
+
+        module.setAttribute('data-editing','true');
+        module.className += ' editing';
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(moduleName){
+
+            moduleName.contentEditable = true;
+            moduleName.focus();
+
+            var t = trim(moduleName.innerText).toLowerCase();
+
+            if(
+                t === 'grupo sin nombre' ||
+                t === 'grupo sin nombre.' ||
+                t === 'sin nombre'
+            ){
+                moduleName.innerText = '';
+            }
+        }
+
+        var pieces =
+            module.querySelectorAll('.piece-name');
+
+        for(var i=0;i<pieces.length;i++){
+
+            pieces[i].contentEditable = true;
+        }
+    }
+
+    function disableEdit(module){
+
+        module.setAttribute('data-editing','false');
+
+        module.className =
+            module.className.replace(' editing','');
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(moduleName){
+
+            moduleName.contentEditable = false;
+        }
+
+        var pieces =
+            module.querySelectorAll('.piece-name');
+
+        for(var i=0;i<pieces.length;i++){
+
+            pieces[i].contentEditable = false;
+        }
+    }
+
+    function saveModuleNameToStore(module){
+
+        var entityId =
+            module.getAttribute('data-entity-id');
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(
+            window.sketchup &&
+            sketchup.update_module_name &&
+            moduleName
+        ){
+            sketchup.update_module_name(
+                entityId,
+                trim(moduleName.innerText)
+            );
+        }
+    }
+
+    function savePieceNameToStore(module, row){
+
+        var entityId =
+            module.getAttribute('data-entity-id');
+
+        var pieceUid =
+            row.getAttribute('data-piece-uid');
+
+        var pieceName =
+            row.querySelector('.piece-name');
+
+        if(
+            window.sketchup &&
+            sketchup.update_piece_name &&
+            pieceName
+        ){
+            sketchup.update_piece_name(
+                entityId,
+                pieceUid,
+                trim(pieceName.innerText)
+            );
+        }
+    }
+
+    function flushModuleToStore(module){
+
+        saveModuleNameToStore(module);
+
+        var rows =
+            module.querySelectorAll('.piece-row');
+
+        for(var i=0;i<rows.length;i++){
+            savePieceNameToStore(module, rows[i]);
+        }
+    }
+
+    function flushAllEditingModules(){
+
+        var modules =
+            document.querySelectorAll('.module[data-editing="true"]');
+
+        for(var i=0;i<modules.length;i++){
+            flushModuleToStore(modules[i]);
+        }
+    }
+
+    function bindAutoSave(module){
+
+        var moduleName =
+            module.querySelector('.module-name');
+
+        if(moduleName){
+
+            moduleName.onblur = function(){
+
+                if(module.getAttribute('data-editing') !== 'true'){
+                    return;
+                }
+
+                saveModuleNameToStore(module);
+            };
+        }
+
+        var rows =
+            module.querySelectorAll('.piece-row');
+
+        for(var i=0;i<rows.length;i++){
+
+            (function(row){
+
+                var pieceName =
+                    row.querySelector('.piece-name');
+
+                if(!pieceName){
+                    return;
+                }
+
+                pieceName.onblur = function(){
+
+                    if(module.getAttribute('data-editing') !== 'true'){
+                        return;
+                    }
+
+                    savePieceNameToStore(module, row);
+                };
+
+            })(rows[i]);
+        }
+    }
+
+    function closeEditingModule(module){
+
+        flushModuleToStore(module);
+        disableEdit(module);
+
+        var btn =
+            module.querySelector('.edit-btn');
+
+        if(btn){
+            btn.innerHTML = '&#9998;';
+        }
+
+        if(window.sketchup && sketchup.refresh_list){
+            sketchup.refresh_list();
+        }
+    }
+
+    function closeOtherEditingModules(currentModule){
+
+        var modules =
+            document.querySelectorAll('.module[data-editing="true"]');
+
+        for(var i=0;i<modules.length;i++){
+
+            if(modules[i] !== currentModule){
+                closeEditingModule(modules[i]);
+            }
+        }
+    }
+
+    function trim(str){
+
+        return String(str)
+            .replace(/^\s+/,'')
+            .replace(/\s+$/,'');
+    }
+
+    window.clearList = function(){
+
+        if(
+            window.sketchup &&
+            sketchup.clear_list
+        ){
+            sketchup.clear_list();
+        }
+    };
+
+    window.exportExcel = function(formato){
+
+        flushAllEditingModules();
+
+        formato = formato || 'clasico';
+
+        if(
+            window.sketchup &&
+            sketchup.export_excel
+        ){
+            sketchup.export_excel(formato);
+        }
+    };
+
+    window.saveState = function(){
+
+        flushAllEditingModules();
+
+        if(
+            window.sketchup &&
+            sketchup.save_state
+        ){
+            sketchup.save_state();
+        }
+    };
+
+    window.openInfo = function(){
+        if(window.sketchup && sketchup.open_info){
+            sketchup.open_info();
+        }
+    };
+
+    window.refreshAll = function(){
+        if(window.sketchup && sketchup.refresh_all){
+            sketchup.refresh_all();
+        }
+    };
+
+    document.addEventListener('click', function(e){
+
+        var invertBtn = findParentByClass(e.target, 'invert-btn');
+
+        if(invertBtn){
+
+            var uidInv =
+                invertBtn.getAttribute('data-uid');
+
+            var pieceUidInv =
+                invertBtn.getAttribute('data-piece-uid');
+
+            if(
+                window.sketchup &&
+                sketchup.toggle_invertida
+            ){
+                sketchup.toggle_invertida(uidInv, pieceUidInv);
+            }
+
+            return;
+        }
+
+        var extraBtn = findParentByClass(e.target, 'extra-btn');
+
+        if(extraBtn){
+
+            var uid =
+                extraBtn.getAttribute('data-uid');
+
+            var pieceUid =
+                extraBtn.getAttribute('data-piece-uid');
+
+            if(
+                window.sketchup &&
+                sketchup.open_extra
+            ){
+                sketchup.open_extra(uid, pieceUid);
+            }
+
+            return;
+        }
+
+        var deleteBtn = findParentByClass(e.target, 'delete-btn');
+
+        if(deleteBtn){
+
+            var moduleEl = findParentByClass(deleteBtn, 'module');
+
+            if(!moduleEl){
+                return;
+            }
+
+            var entityId =
+                moduleEl.getAttribute('data-entity-id');
+
+            if(!confirm('¿Eliminar este módulo?')){
+                return;
+            }
+
+            flushAllEditingModules();
+
+            if(
+                window.sketchup &&
+                sketchup.remove_module
+            ){
+                sketchup.remove_module(entityId);
+            }
+
+            return;
+        }
+
+        var btn = findParentByClass(e.target, 'edit-btn');
+
+        if(!btn){
+            return;
+        }
+
+        var module = findParentByClass(btn, 'module');
+
+        if(!module){
+            return;
+        }
+
+        var editing =
+            module.getAttribute('data-editing') === 'true';
+
+        if(editing){
+
+            closeEditingModule(module);
+
+        }else{
+
+            closeOtherEditingModules(module);
+            bindClearDefaultText(module);
+            bindAutoSave(module);
+            enableEdit(module);
+            btn.innerHTML = '✓';
+
+        }
+
+    }, false);
+
+    var moduleHeaders = document.querySelectorAll('.module-header');
+    var h;
+    for(h = 0; h < moduleHeaders.length; h++){
+        (function(header){
+            header.addEventListener('click', function(e){
+                var target = e.target;
+                while(target && target !== header){
+                    if(target.classList && target.classList.contains('edit-btn')){
+                        return;
+                    }
+                    target = target.parentNode;
+                }
+                var module = findParentByClass(header, 'module');
+                if(module){
+                    module.classList.toggle('open');
+                    var isOpen = module.classList.contains('open');
+                    if(window.sketchup && sketchup.set_module_open){
+                        sketchup.set_module_open(module.getAttribute('data-entity-id'), isOpen ? '1' : '0');
+                    }
+                }
+            });
+        })(moduleHeaders[h]);
+    }
+
+})();
+
+</script>
+
+</body>
+</html>
+```
+
+### `despiece_pro_v2/export_excel.py`
+
+```python
+# -*- coding: utf-8 -*-
+import json
+import sys
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+
+HEADERS = [
+    'cantidad',
+    'LARGO',
+    'ANCHO',
+    'nombre',
+    'rota',
+    'canto_arr',
+    'canto_aba',
+    'canto_izq',
+    'canto_der',
+]
+
+COLOR_HEADER_BG = '2F4F7F'
+COLOR_HEADER_FG = 'FFFFFF'
+COLOR_MODULE_BG = '4A7C9E'
+COLOR_MODULE_FG = 'FFFFFF'
+COLOR_ROW_ALT = 'EEF2F7'
+COLOR_WHITE = 'FFFFFF'
+
+
+def solid_fill(color):
+    return PatternFill(fill_type='solid', fgColor=color)
+
+
+def load_payload(json_path):
+    with open(json_path, encoding='utf-8-sig') as handle:
+        return json.load(handle)
+
+
+def group_modules(rows):
+    modules = []
+    current_module = None
+    current_pieces = []
+
+    for item in rows:
+        row_type = item.get('type')
+        if row_type == 'module':
+            if current_module is not None:
+                modules.append((current_module, current_pieces))
+            current_module = item.get('label', '')
+            current_pieces = []
+        elif row_type == 'piece':
+            current_pieces.append(item)
+
+    if current_module is not None:
+        modules.append((current_module, current_pieces))
+
+    return modules
+
+
+def piece_placa(piece):
+    placa = piece.get('placa_nombre')
+    if placa:
+        return placa
+    espesor = piece.get('espesor', 0)
+    return f'{int(espesor)}mm Blanco'
+
+
+def placa_sort_key(placa_nombre):
+    parts = placa_nombre.split(' ', 1)
+    th_str = parts[0] if parts else '0mm'
+    rest = parts[1] if len(parts) > 1 else ''
+    th_num = 0
+    if th_str.endswith('mm'):
+        try:
+            th_num = int(th_str[:-2])
+        except ValueError:
+            th_num = 0
+    return (-th_num, rest.lower())
+
+
+def collect_placas(modules):
+    placas = set()
+    for _, pieces in modules:
+        for piece in pieces:
+            placas.add(piece_placa(piece))
+    return sorted(placas, key=placa_sort_key)
+
+
+def sanitize_sheet_name(name):
+    forbidden = ':\\/?*[]'
+    result = name
+    for ch in forbidden:
+        result = result.replace(ch, ' ')
+    if len(result) > 31:
+        result = result[:31]
+    return result
+
+
+def write_header_row(sheet, row_index):
+    fill = solid_fill(COLOR_HEADER_BG)
+    font = Font(bold=True, color=COLOR_HEADER_FG)
+
+    for column_index, header in enumerate(HEADERS, start=1):
+        cell = sheet.cell(row=row_index, column=column_index, value=header)
+        cell.font = font
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal='center')
+
+
+def write_module_row(sheet, row_index, label):
+    fill = solid_fill(COLOR_MODULE_BG)
+    font = Font(bold=True, color=COLOR_MODULE_FG)
+
+    for column_index in range(1, len(HEADERS) + 1):
+        cell = sheet.cell(row=row_index, column=column_index)
+        cell.fill = fill
+        if column_index == 1:
+            cell.value = label
+            cell.font = font
+
+    sheet.merge_cells(
+        start_row=row_index,
+        start_column=1,
+        end_row=row_index,
+        end_column=len(HEADERS),
+    )
+
+
+def write_piece_row(sheet, row_index, item, use_alt_fill):
+    values = [
+        item['cantidad'],
+        item['largo'],
+        item['ancho'],
+        item['nombre'],
+        item.get('rota', 1),
+        item.get('canto_arr', 0),
+        item.get('canto_aba', 0),
+        item.get('canto_izq', 0),
+        item.get('canto_der', 0),
+    ]
+    fill_color = COLOR_ROW_ALT if use_alt_fill else COLOR_WHITE
+    fill = solid_fill(fill_color)
+
+    for column_index, value in enumerate(values, start=1):
+        cell = sheet.cell(row=row_index, column=column_index, value=value)
+        cell.fill = fill
+
+
+def write_total_row(sheet, row_index, label):
+    cell = sheet.cell(row=row_index, column=1, value=label)
+    cell.font = Font(bold=True)
+
+
+def adjust_column_widths(sheet):
+    for column_index, header in enumerate(HEADERS, start=1):
+        width = max(len(header) + 2, 12)
+        column_letter = sheet.cell(row=2, column=column_index).column_letter
+        sheet.column_dimensions[column_letter].width = width
+
+
+def write_sheet(workbook, sheet_name, project_title, modules, placa_nombre):
+    sheet = workbook.create_sheet(title=sheet_name)
+
+    row_index = 1
+    title_cell = sheet.cell(row=row_index, column=1, value=project_title)
+    title_cell.font = Font(bold=True)
+    sheet.merge_cells(
+        start_row=row_index,
+        start_column=1,
+        end_row=row_index,
+        end_column=len(HEADERS),
+    )
+    row_index += 1
+
+    write_header_row(sheet, row_index)
+    row_index += 1
+
+    total_count = 0
+    for module_label, pieces in modules:
+        filtered_pieces = [
+            piece for piece in pieces if piece_placa(piece) == placa_nombre
+        ]
+        if not filtered_pieces:
+            continue
+
+        write_module_row(sheet, row_index, module_label)
+        row_index += 1
+
+        use_alt_fill = False
+        for piece in filtered_pieces:
+            write_piece_row(sheet, row_index, piece, use_alt_fill)
+            total_count += piece.get('cantidad', 0)
+            use_alt_fill = not use_alt_fill
+            row_index += 1
+
+    write_total_row(sheet, row_index, f'TOTAL DE PIEZAS: {total_count}')
+    adjust_column_widths(sheet)
+
+
+def write_xlsx(output_path, payload):
+    project_title = payload.get('project_title', 'PROYECTO: Sin nombre')
+    modules = group_modules(payload.get('rows', []))
+    placas = collect_placas(modules)
+
+    if not placas:
+        placas = ['0mm Blanco']
+
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+
+    for placa_nombre in placas:
+        write_sheet(
+            workbook,
+            sanitize_sheet_name(placa_nombre),
+            project_title,
+            modules,
+            placa_nombre,
+        )
+
+    workbook.save(output_path)
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.stderr.write('Uso: export_excel.py salida.xlsx datos.json\n')
+        sys.exit(1)
+
+    output_path = sys.argv[1]
+    json_path = sys.argv[2]
+    payload = load_payload(json_path)
+    write_xlsx(output_path, payload)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+### `despiece_pro_v2/export_cortecloud.py`
+
+```python
+# -*- coding: utf-8 -*-
+import json
+import sys
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+
+HEADERS = [
+    'Cantidad',
+    'Largo',
+    'Ancho',
+    'Función',
+    'Tapacanto L1',
+    'Tapacanto L2',
+    'Tapacanto A1',
+    'Tapacanto A2',
+    'Material',
+    'Complemento',
+]
+
+COLOR_HEADER_BG = '2F4F7F'
+COLOR_HEADER_FG = 'FFFFFF'
+COLOR_ROW_ALT = 'EEF2F7'
+COLOR_WHITE = 'FFFFFF'
+
+
+def solid_fill(color):
+    return PatternFill(fill_type='solid', fgColor=color)
+
+
+def load_payload(json_path):
+    with open(json_path, encoding='utf-8-sig') as handle:
+        return json.load(handle)
+
+
+def group_modules(rows):
+    modules = []
+    current_module = None
+    current_pieces = []
+
+    for item in rows:
+        row_type = item.get('type')
+        if row_type == 'module':
+            if current_module is not None:
+                modules.append((current_module, current_pieces))
+            current_module = item.get('label', '')
+            current_pieces = []
+        elif row_type == 'piece':
+            current_pieces.append(item)
+
+    if current_module is not None:
+        modules.append((current_module, current_pieces))
+
+    return modules
+
+
+def piece_placa(piece):
+    placa = piece.get('placa_nombre')
+    if placa:
+        return placa
+    espesor = piece.get('espesor', 0)
+    return f'{int(espesor)}mm Blanco'
+
+
+def clean_module_name(label):
+    text = label.rsplit('\u2014', 1)[-1].strip()
+    return text
+
+
+def canto_label(item, canto_value):
+    v = int(canto_value or 0)
+    if v == 0:
+        return ''
+    if v == 1:
+        color = item.get('canto_rojo_color', '')
+        espesor = item.get('canto_rojo_espesor', '')
+    else:
+        color = item.get('canto_azul_color', '')
+        espesor = item.get('canto_azul_espesor', '')
+    if not espesor:
+        return color  # si no hay espesor cargado, al menos poner el color
+    return f'{color} {espesor}mm'.strip()
+
+
+def write_header_row(sheet, row_index):
+    fill = solid_fill(COLOR_HEADER_BG)
+    font = Font(bold=True, color=COLOR_HEADER_FG)
+
+    for column_index, header in enumerate(HEADERS, start=1):
+        cell = sheet.cell(row=row_index, column=column_index, value=header)
+        cell.font = font
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal='center')
+
+
+def write_piece_row(sheet, row_index, item, complemento, use_alt_fill):
+    values = [
+        item['cantidad'],
+        item['largo'],
+        item['ancho'],
+        item['nombre'],
+        canto_label(item, item.get('canto_aba', 0)),
+        canto_label(item, item.get('canto_arr', 0)),
+        canto_label(item, item.get('canto_izq', 0)),
+        canto_label(item, item.get('canto_der', 0)),
+        piece_placa(item),
+        complemento,
+    ]
+    fill_color = COLOR_ROW_ALT if use_alt_fill else COLOR_WHITE
+    fill = solid_fill(fill_color)
+
+    for column_index, value in enumerate(values, start=1):
+        cell = sheet.cell(row=row_index, column=column_index, value=value)
+        cell.fill = fill
+
+
+def adjust_column_widths(sheet):
+    for column_index, header in enumerate(HEADERS, start=1):
+        width = max(len(header) + 2, 12)
+        column_letter = sheet.cell(row=1, column=column_index).column_letter
+        sheet.column_dimensions[column_letter].width = width
+
+
+def write_xlsx(output_path, payload):
+    modules = group_modules(payload.get('rows', []))
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'CorteCloud'
+
+    write_header_row(sheet, 1)
+    row_index = 2
+    use_alt_fill = False
+
+    for module_label, pieces in modules:
+        complemento = clean_module_name(module_label)
+        for piece in pieces:
+            write_piece_row(sheet, row_index, piece, complemento, use_alt_fill)
+            use_alt_fill = not use_alt_fill
+            row_index += 1
+
+    adjust_column_widths(sheet)
+    workbook.save(output_path)
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.stderr.write('Uso: export_cortecloud.py salida.xlsx datos.json\n')
+        sys.exit(1)
+
+    output_path = sys.argv[1]
+    json_path = sys.argv[2]
+    payload = load_payload(json_path)
+    write_xlsx(output_path, payload)
+
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+## 3. HISTORIAL DE CAMBIOS RELEVANTES
+
+### `git log --oneline -20`
+
+```
+ff1ecc7 Fix refresh losing piece metadata on dimension changes and uid remaps.
+8bae994 Fix refresh wiping despiece when reopening saved files.
+d47558a Fix: preserve piece metadata when dimensions or color change on refresh.
+8bb9757 Fix piece metadata loss on dimension or color change.
+4719ce6 Fix CorteCloud edge banding columns: swap L1/A1 and L2/A2.
+3716ea2 Rename plugin to despiece_pro_v2 so it coexists with original.
+2ed6e1a Add CorteCloud Excel export with edge banding details.
+3c6e49a Initial copy of DespiecePRO for CorteCloud export work.
+```
+
+### `git log -p -3 -- despiece_pro_v2/main.rb`
+
+```
+commit ff1ecc7dbe6bac047bbb8f2ca9e28a49accf416c
+Author: Leandro Sevilla <leansevilla@gmail.com>
+Date:   Mon Aug 31 20:21:37 2026 -0300
+
+    Fix refresh losing piece metadata on dimension changes and uid remaps.
+    
+    Co-authored-by: Cursor <cursoragent@cursor.com>
+
+diff --git a/despiece_pro_v2/main.rb b/despiece_pro_v2/main.rb
+index 83d199f..bdb271d 100644
+--- a/despiece_pro_v2/main.rb
++++ b/despiece_pro_v2/main.rb
+@@ -570,44 +570,72 @@ module BiraEstudio
+         end
+ 
+         # Tras cambiar medida/color en SketchUp, el piece_uid de la entidad puede cambiar.
+-        # Empareja piezas viejas/nuevas sin uid en comun y transfiere nombre/cantos/invertida.
++        # Empareja piezas viejas/nuevas y transfiere nombre/cantos/invertida.
+         def reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
+-          old_by_uid = {}
+-          old_pieces.each { |piece| old_by_uid[piece[:uid].to_s] = piece }
+-
++          old_pieces = old_pieces.map(&:dup)
+           matched_old = {}
+           matched_new = {}
+ 
++          # 1) Mismo piece_uid en entidad
+           new_grouped.each_with_index do |np, idx|
+             uid = np[:uid].to_s
+             next if uid.empty?
+ 
+-            old_piece = old_by_uid[uid]
++            old_piece = old_pieces.find { |p| p[:uid].to_s == uid && !matched_old[p[:uid].to_s] }
+             unless old_piece
+               np[:invertida] = false if np[:invertida].nil?
+               next
+             end
+ 
+             np[:invertida] = piece_invertida?(old_piece)
+-            matched_old[uid] = true
++            matched_old[old_piece[:uid].to_s] = true
++            matched_new[idx] = true
++          end
++
++          # 2) Mismas dimensiones+color pero uid distinto (entidad re-etiquetada)
++          new_grouped.each_with_index do |np, idx|
++            next if matched_new[idx]
++
++            key = piece_dim_key(np[:length], np[:width], np[:thickness], np[:color] || '#FFFFFF')
++            old_piece = old_pieces.find do |p|
++              !matched_old[p[:uid].to_s] &&
++                piece_dim_key(p[:length], p[:width], p[:thickness], p[:color] || '#FFFFFF') == key
++            end
++            next unless old_piece
++
++            transfer_piece_metadata!(entry, old_piece[:uid], np[:uid])
++            np[:invertida] = piece_invertida?(old_piece)
++            matched_old[old_piece[:uid].to_s] = true
++            matched_new[idx] = true
++          end
++
++          # 3) Modificación probable: mismo ancho/espesor/color, largo distinto
++          new_grouped.each_with_index do |np, idx|
++            next if matched_new[idx]
++
++            old_piece = old_pieces.find do |p|
++              !matched_old[p[:uid].to_s] && piece_similar_modification?(p, np)
++            end
++            next unless old_piece
++
++            transfer_piece_metadata!(entry, old_piece[:uid], np[:uid])
++            np[:invertida] = piece_invertida?(old_piece)
++            matched_old[old_piece[:uid].to_s] = true
+             matched_new[idx] = true
+           end
+ 
+           unmatched_old = old_pieces.reject { |piece| matched_old[piece[:uid].to_s] }
+           unmatched_new_indices = new_grouped.each_index.reject { |i| matched_new[i] }
+ 
+-          if unmatched_old.length == 1 && unmatched_new_indices.length == 1
+-            old_piece = unmatched_old[0]
+-            new_piece = new_grouped[unmatched_new_indices[0]]
++          # 4) Emparejar restantes en orden (ej. 1 eliminada + 2 nuevas → la 1ra hereda metadata)
++          pair_count = [unmatched_old.length, unmatched_new_indices.length].min
++          pair_count.times do |i|
++            old_piece = unmatched_old[i]
++            idx = unmatched_new_indices[i]
++            new_piece = new_grouped[idx]
+             transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
+             new_piece[:invertida] = piece_invertida?(old_piece)
+-          elsif !unmatched_new_indices.empty? && unmatched_old.length == unmatched_new_indices.length
+-            unmatched_new_indices.each_with_index do |idx, i|
+-              old_piece = unmatched_old[i]
+-              new_piece = new_grouped[idx]
+-              transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
+-              new_piece[:invertida] = piece_invertida?(old_piece)
+-            end
++            matched_new[idx] = true
+           end
+ 
+           new_grouped.each do |np|
+@@ -618,16 +646,27 @@ module BiraEstudio
+           new_grouped
+         end
+ 
++        def piece_similar_modification?(old_piece, new_piece)
++          old_piece[:width].to_i == new_piece[:width].to_i &&
++            old_piece[:thickness].to_i == new_piece[:thickness].to_i &&
++            (old_piece[:color] || '#FFFFFF').to_s.strip.upcase == (new_piece[:color] || '#FFFFFF').to_s.strip.upcase
++        end
++
+         def assign_missing_entity_piece_uids(module_entity, entry)
+           scanner = ScanModuleTool.new
+           raw_pieces = scanner.collect_pieces(module_entity)
+           return if raw_pieces.empty?
+ 
+           available_uids_by_key = {}
++          available_uids_by_nc = {}
+           entry[:pieces].each do |piece|
+             key = piece_dim_key(piece[:length], piece[:width], piece[:thickness], piece[:color] || '#FFFFFF')
++            nc = dim_key_no_color(piece[:length], piece[:width], piece[:thickness])
++            uid = piece[:uid].to_s
+             available_uids_by_key[key] ||= []
+-            available_uids_by_key[key] << piece[:uid].to_s
++            available_uids_by_key[key] << uid
++            available_uids_by_nc[nc] ||= []
++            available_uids_by_nc[nc] << uid
+           end
+ 
+           groups = {}
+@@ -648,10 +687,16 @@ module BiraEstudio
+ 
+           groups.each do |key, entities|
+             pool = (available_uids_by_key[key] || []).dup
++            nc = key.split(',')[0..2].join(',')
++            nc_pool = (available_uids_by_nc[nc] || []).dup
++
+             entities.each do |entity|
+               next unless entity_piece_uid(entity).empty?
+ 
+               uid = pool.shift
++              if uid.nil? || uid.empty?
++                uid = nc_pool.shift
++              end
+               uid = generate_piece_uid if uid.nil? || uid.empty?
+               entity.set_attribute(ATTRIBUTE_DICT, PIECE_UID_KEY, uid)
+             end
+
+commit 8bae99400f4430095dd57f07c7c503f1bdfef425
+Author: Leandro Sevilla <leansevilla@gmail.com>
+Date:   Mon Aug 31 20:15:36 2026 -0300
+
+    Fix refresh wiping despiece when reopening saved files.
+    
+    Co-authored-by: Cursor <cursoragent@cursor.com>
+
+diff --git a/despiece_pro_v2/main.rb b/despiece_pro_v2/main.rb
+index 7caf9b9..83d199f 100644
+--- a/despiece_pro_v2/main.rb
++++ b/despiece_pro_v2/main.rb
+@@ -664,6 +664,91 @@ module BiraEstudio
+           map
+         end
+ 
++        def relink_module_entities(model)
++          uid_map = build_uid_entity_map(model)
++          scanner = ScanModuleTool.new
++          claimed_uids = @modules.map { |entry| entry[:uid].to_s }.each_with_object({}) { |uid, memo| memo[uid] = true }
++          candidates = []
++          collect_unlinked_module_candidates(model.entities, candidates, claimed_uids)
++
++          @modules.each do |entry|
++            uid = entry[:uid].to_s
++            next if uid.empty? || uid_map[uid]
++
++            match = candidates.find do |entity|
++              entity.valid? && entity_uid(entity).empty? && entity.name.to_s.strip == entry[:name].to_s.strip
++            end
++
++            unless match
++              old_sig = module_piece_signature(entry)
++              match = candidates.find do |entity|
++                next false unless entity.valid? && entity_uid(entity).empty?
++
++                begin
++                  pieces = scanner.collect_pieces(entity)
++                  grouped = scanner.group_pieces_by_dimensions(pieces)
++                  module_piece_signature_from_grouped(grouped) == old_sig
++                rescue StandardError
++                  false
++                end
++              end
++            end
++
++            next unless match
++
++            match.set_attribute(ATTRIBUTE_DICT, MODULE_UID_KEY, uid)
++            uid_map[uid] = match
++            @scanned_uids << uid unless @scanned_uids.include?(uid)
++            @scanned_entities << match unless @scanned_entities.include?(match)
++            candidates.delete(match)
++          end
++
++          uid_map
++        end
++
++        def collect_unlinked_module_candidates(entities, candidates, claimed_uids)
++          scanner = ScanModuleTool.new
++          entities.each do |entity|
++            next unless entity.valid?
++            next unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
++
++            uid = entity_uid(entity)
++            if uid.empty? && scanner.module_container?(entity)
++              candidates << entity
++            end
++
++            if entity.is_a?(Sketchup::Group)
++              collect_unlinked_module_candidates(entity.entities, candidates, claimed_uids)
++            elsif entity.is_a?(Sketchup::ComponentInstance)
++              collect_unlinked_module_candidates(entity.definition.entities, candidates, claimed_uids)
++            end
++          end
++        end
++
++        def module_piece_signature(entry)
++          (entry[:pieces] || []).map do |piece|
++            [
++              piece[:length].to_i,
++              piece[:width].to_i,
++              piece[:thickness].to_i,
++              (piece[:color] || '#FFFFFF').to_s.strip.upcase,
++              piece[:count].to_i
++            ]
++          end.sort
++        end
++
++        def module_piece_signature_from_grouped(grouped)
++          grouped.map do |piece|
++            [
++              piece[:length].to_i,
++              piece[:width].to_i,
++              piece[:thickness].to_i,
++              (piece[:color] || '#FFFFFF').to_s.strip.upcase,
++              piece[:count].to_i
++            ]
++          end.sort
++        end
++
+         def collect_uid_entities(entities, map)
+           entities.each do |entity|
+             next unless entity.valid?
+@@ -693,9 +778,9 @@ module BiraEstudio
+ 
+         def refresh_all_modules
+           model = Sketchup.active_model
+-          uid_map = build_uid_entity_map(model)
++          uid_map = relink_module_entities(model)
+           scanner = BiraEstudio::DespieceProV2::ScanModuleTool.new
+-          report = { added: [], removed: [], changed: [] }
++          report = { added: [], removed: [], changed: [], skipped: [] }
+ 
+           dim_key_no_color = lambda do |length, width, thickness|
+             "#{length.to_i},#{width.to_i},#{thickness.to_i}"
+@@ -706,7 +791,7 @@ module BiraEstudio
+             entity = uid_map[uid]
+ 
+             unless entity && entity.valid?
+-              report[:removed] << { module_name: entry[:name], reason: 'grupo eliminado del modelo' }
++              report[:skipped] << { module_name: entry[:name], reason: 'grupo no encontrado en el modelo (se conservan los datos guardados)' }
+               next
+             end
+ 
+@@ -717,6 +802,12 @@ module BiraEstudio
+               new_grouped = scanner.group_pieces_by_dimensions(pieces)
+             rescue StandardError => e
+               puts "Despiece PRO refresh: error escaneando #{entry[:name]} - #{e.message}"
++              report[:skipped] << { module_name: entry[:name], reason: "error al escanear: #{e.message}" }
++              next
++            end
++
++            if new_grouped.empty?
++              report[:skipped] << { module_name: entry[:name], reason: 'sin piezas detectadas (se conservan los datos guardados)' }
+               next
+             end
+ 
+@@ -754,12 +845,6 @@ module BiraEstudio
+             entry[:pieces] = reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
+           end
+ 
+-          # Eliminar módulos cuyos grupos ya no existen
+-          @modules.reject! do |entry|
+-            entity = uid_map[entry[:uid]]
+-            !(entity && entity.valid?)
+-          end
+-
+           save_to_model(model)
+           report
+         end
+@@ -851,6 +936,8 @@ module BiraEstudio
+             restored_count += 1
+           end
+ 
++          relink_module_entities(model)
++
+           puts "Despiece PRO: #{restored_count} modulos restaurados de #{modules_data.length}"
+           restored_count
+         rescue JSON::ParserError => e
+@@ -1510,11 +1597,19 @@ module BiraEstudio
+           added   = report[:added]   || []
+           removed = report[:removed] || []
+           changed = report[:changed] || []
++          skipped = report[:skipped] || []
+ 
+-          return if added.empty? && removed.empty? && changed.empty?
++          return if added.empty? && removed.empty? && changed.empty? && skipped.empty?
+ 
+           lines = []
+ 
++          unless skipped.empty?
++            lines << "MODULOS SIN ACTUALIZAR (#{skipped.length}):"
++            skipped.each do |item|
++              lines << "  ! #{item[:module_name]}: #{item[:reason]}"
++            end
++          end
++
+           unless added.empty?
+             lines << "PIEZAS AGREGADAS (#{added.length}):"
+             added.each do |item|
+
+commit d47558a2621747c5c38f034fa299645b7cb2ea22
+Author: Leandro Sevilla <leansevilla@gmail.com>
+Date:   Sat Aug 29 21:50:13 2026 -0300
+
+    Fix: preserve piece metadata when dimensions or color change on refresh.
+    
+    Co-authored-by: Cursor <cursoragent@cursor.com>
+
+diff --git a/despiece_pro_v2/main.rb b/despiece_pro_v2/main.rb
+index 8867381..7caf9b9 100644
+--- a/despiece_pro_v2/main.rb
++++ b/despiece_pro_v2/main.rb
+@@ -552,6 +552,72 @@ module BiraEstudio
+           entry[:piece_cantos].delete_if { |key, _| !active_lookup[key.to_s] }
+         end
+ 
++        def transfer_piece_metadata!(entry, old_uid, new_uid)
++          old_uid = old_uid.to_s
++          new_uid = new_uid.to_s
++          return if old_uid.empty? || new_uid.empty? || old_uid == new_uid
++
++          entry[:piece_names] ||= {}
++          entry[:piece_cantos] ||= {}
++
++          if entry[:piece_names].key?(old_uid) && !entry[:piece_names].key?(new_uid)
++            entry[:piece_names][new_uid] = entry[:piece_names].delete(old_uid)
++          end
++
++          if entry[:piece_cantos].key?(old_uid) && !entry[:piece_cantos].key?(new_uid)
++            entry[:piece_cantos][new_uid] = entry[:piece_cantos].delete(old_uid)
++          end
++        end
++
++        # Tras cambiar medida/color en SketchUp, el piece_uid de la entidad puede cambiar.
++        # Empareja piezas viejas/nuevas sin uid en comun y transfiere nombre/cantos/invertida.
++        def reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
++          old_by_uid = {}
++          old_pieces.each { |piece| old_by_uid[piece[:uid].to_s] = piece }
++
++          matched_old = {}
++          matched_new = {}
++
++          new_grouped.each_with_index do |np, idx|
++            uid = np[:uid].to_s
++            next if uid.empty?
++
++            old_piece = old_by_uid[uid]
++            unless old_piece
++              np[:invertida] = false if np[:invertida].nil?
++              next
++            end
++
++            np[:invertida] = piece_invertida?(old_piece)
++            matched_old[uid] = true
++            matched_new[idx] = true
++          end
++
++          unmatched_old = old_pieces.reject { |piece| matched_old[piece[:uid].to_s] }
++          unmatched_new_indices = new_grouped.each_index.reject { |i| matched_new[i] }
++
++          if unmatched_old.length == 1 && unmatched_new_indices.length == 1
++            old_piece = unmatched_old[0]
++            new_piece = new_grouped[unmatched_new_indices[0]]
++            transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
++            new_piece[:invertida] = piece_invertida?(old_piece)
++          elsif !unmatched_new_indices.empty? && unmatched_old.length == unmatched_new_indices.length
++            unmatched_new_indices.each_with_index do |idx, i|
++              old_piece = unmatched_old[i]
++              new_piece = new_grouped[idx]
++              transfer_piece_metadata!(entry, old_piece[:uid], new_piece[:uid])
++              new_piece[:invertida] = piece_invertida?(old_piece)
++            end
++          end
++
++          new_grouped.each do |np|
++            np[:invertida] = false if np[:invertida].nil?
++          end
++
++          cleanup_orphan_piece_metadata!(entry)
++          new_grouped
++        end
++
+         def assign_missing_entity_piece_uids(module_entity, entry)
+           scanner = ScanModuleTool.new
+           raw_pieces = scanner.collect_pieces(module_entity)
+@@ -684,19 +750,8 @@ module BiraEstudio
+               report[:changed] << { module_name: entry[:name], old: old_p, new: new_p, name: name }
+             end
+ 
+-            invertida_by_uid = {}
+-            entry[:pieces].each do |piece|
+-              next unless piece_invertida?(piece)
+-
+-              invertida_by_uid[piece[:uid].to_s] = true
+-            end
+-
+-            entry[:pieces] = new_grouped.map do |piece|
+-              piece[:invertida] = true if invertida_by_uid[piece[:uid].to_s]
+-              piece
+-            end
+-
+-            cleanup_orphan_piece_metadata!(entry)
++            old_pieces = entry[:pieces].map(&:dup)
++            entry[:pieces] = reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
+           end
+ 
+           # Eliminar módulos cuyos grupos ya no existen
+```
+
+---
+
+## 4. DESCRIPCIÓN TÉCNICA DE LA FUNCIÓN DE REFRESH
+
+Referencias de línea según el `despiece_pro_v2/main.rb` actual incluido en la sección 2.
+
+### 4.1 Lógica de refresh que recalcula medidas de piezas
+
+- Método principal: `BiraEstudio::DespieceProV2::Store.refresh_all_modules` — línea **824**.
+- Dentro de ese método se reescanean piezas con `scanner.collect_pieces` / `scanner.group_pieces_by_dimensions` y se reemplaza `entry[:pieces]` vía `reconcile_pieces_metadata!` (llamada en línea **890**).
+- Método auxiliar de reconciliación de metadatos al refrescar: `Store.reconcile_pieces_metadata!` — línea **574**.
+- Transferencia de nombre/cantos entre uids: `Store.transfer_piece_metadata!` — línea **555**.
+- Disparo desde UI: `ListDialog.refresh_all` — línea **1633**, que llama `Store.refresh_all_modules`.
+- Callback del diálogo HTML: `dialog.add_action_callback('refresh_all')` — línea **1783**.
+
+### 4.2 Guardado y lectura del diccionario de persistencia en el .skp
+
+- **Guardar** en el modelo: `Store.save_to_model(model)` — línea **813**.
+  - Escribe con `model.set_attribute(ATTRIBUTE_DICT, ATTRIBUTE_KEY, serialize_state)` — línea **816**.
+- **Serializar** estado (incluye `piece_names`, `piece_cantos`, piezas con uid, `invertida`, `canto_config`, etc.): `Store.serialize_state` — línea **1033**.
+  - `piece_names` en línea **1049**; `piece_cantos` en línea **1050**.
+- **Leer / restaurar** desde el modelo: `Store.restore_from_model(model)` — línea **926**.
+  - Lee con `model.get_attribute(ATTRIBUTE_DICT, ATTRIBUTE_KEY)` — línea **929**.
+  - Restaura `piece_names` y `piece_cantos` al armar `module_entry` — líneas **974–975**.
+- Acceso/actualización en memoria de cantos: `Store.get_piece_cantos` (línea **125**), `Store.update_piece_cantos` (línea **133**).
+- Actualización de nombres de pieza: `Store.update_piece_name` — línea **111**.
+
+### 4.3 ¿Hay evento automático al abrir el archivo que llame al refresh?
+
+- En `main.rb` **no** hay `AppObserver`, `onOpenModel`, ni otro observer de apertura de modelo registrado.
+- Al cargar el plugin (`unless file_loaded?(__FILE__)`), línea **2089**, se ejecuta `Store.restore_from_model(Sketchup.active_model)` — esto **restaura** datos del .skp, **no** llama a `refresh_all_modules`.
+- Al abrir la lista (`ListDialog.show`, línea **1694**), línea **1695**, también se llama `Store.restore_from_model(Sketchup.active_model)` — tampoco llama a `refresh_all_modules`.
+- `refresh_all_modules` / `ListDialog.refresh_all` se ejecutan cuando el usuario dispara el callback `refresh_all` del diálogo (línea **1783** / **1633**).
+- Nota: dentro del flujo de `restore_from_model` hay llamada(s) a `relink_module_entities` en línea(s) 984. Eso no es el refresh de medidas; el refresh de medidas es `refresh_all_modules`.
+
