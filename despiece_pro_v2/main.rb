@@ -638,6 +638,7 @@ module BiraEstudio
 
         # Tras cambiar medida/color en SketchUp, el piece_uid de la entidad puede cambiar.
         # Empareja piezas viejas/nuevas y transfiere nombre/cantos/invertida.
+        # Nunca reescribe count/dims/color: eso viene siempre de new_grouped (modelo vivo).
         def reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
           old_pieces = old_pieces.map(&:dup)
           matched_old = {}
@@ -676,7 +677,24 @@ module BiraEstudio
             matched_new[idx] = true
           end
 
-          # 3) Modificación probable: mismo ancho/espesor/color, largo distinto
+          # 2b) Mismas dimensiones, color distinto (cambio de textura/material)
+          new_grouped.each_with_index do |np, idx|
+            next if matched_new[idx]
+
+            key = dim_key_no_color(np[:length], np[:width], np[:thickness])
+            old_piece = old_pieces.find do |p|
+              !matched_old[p[:uid].to_s] &&
+                dim_key_no_color(p[:length], p[:width], p[:thickness]) == key
+            end
+            next unless old_piece
+
+            transfer_piece_metadata!(entry, old_piece[:uid], np[:uid])
+            np[:invertida] = piece_invertida?(old_piece)
+            matched_old[old_piece[:uid].to_s] = true
+            matched_new[idx] = true
+          end
+
+          # 3) Modificación probable: mismo ancho/espesor, largo y/o color distintos
           new_grouped.each_with_index do |np, idx|
             next if matched_new[idx]
 
@@ -715,8 +733,7 @@ module BiraEstudio
 
         def piece_similar_modification?(old_piece, new_piece)
           old_piece[:width].to_i == new_piece[:width].to_i &&
-            old_piece[:thickness].to_i == new_piece[:thickness].to_i &&
-            (old_piece[:color] || '#FFFFFF').to_s.strip.upcase == (new_piece[:color] || '#FFFFFF').to_s.strip.upcase
+            old_piece[:thickness].to_i == new_piece[:thickness].to_i
         end
 
         def assign_missing_entity_piece_uids(module_entity, entry)
@@ -791,23 +808,40 @@ module BiraEstudio
             uid = entry[:uid].to_s
             next if uid.empty? || uid_map[uid]
 
-            match = candidates.find do |entity|
-              entity.valid? && entity_uid(entity).empty? && entity.name.to_s.strip == entry[:name].to_s.strip
+            match = nil
+            entry_name = entry[:name].to_s.strip
+            usable_name = !entry_name.empty? && entry_name != 'Grupo sin nombre'
+
+            if usable_name
+              named = candidates.select do |entity|
+                entity.valid? && entity_uid(entity).empty? && entity.name.to_s.strip == entry_name
+              end
+              match = named.first if named.length == 1
             end
 
             unless match
-              old_sig = module_piece_signature(entry)
-              match = candidates.find do |entity|
-                next false unless entity.valid? && entity_uid(entity).empty?
+              old_dims = module_dim_signature(entry)
+              best = nil
+              best_score = 0
+              candidates.each do |entity|
+                next unless entity.valid? && entity_uid(entity).empty?
 
                 begin
                   pieces = scanner.collect_pieces(entity)
+                  next if pieces.empty?
+
                   grouped = scanner.group_pieces_by_dimensions(pieces)
-                  module_piece_signature_from_grouped(grouped) == old_sig
+                  score = dim_signature_overlap(old_dims, module_dim_signature_from_grouped(grouped))
+                  next if score <= 0
+                  next if best && score < best_score
+
+                  best = entity
+                  best_score = score
                 rescue StandardError
-                  false
+                  next
                 end
               end
+              match = best if best_score > 0
             end
 
             next unless match
@@ -839,6 +873,34 @@ module BiraEstudio
               collect_unlinked_module_candidates(entity.definition.entities, candidates, claimed_uids)
             end
           end
+        end
+
+        # Firma solo por dimensiones (sin color ni cantidad) para relink tras editar el modelo.
+        def module_dim_signature(entry)
+          (entry[:pieces] || []).map do |piece|
+            [piece[:length].to_i, piece[:width].to_i, piece[:thickness].to_i]
+          end.sort
+        end
+
+        def module_dim_signature_from_grouped(grouped)
+          grouped.map do |piece|
+            [piece[:length].to_i, piece[:width].to_i, piece[:thickness].to_i]
+          end.sort
+        end
+
+        def dim_signature_overlap(old_dims, new_dims)
+          return 0 if old_dims.nil? || new_dims.nil? || old_dims.empty? || new_dims.empty?
+
+          old_counts = Hash.new(0)
+          old_dims.each { |dim| old_counts[dim] += 1 }
+          score = 0
+          new_dims.each do |dim|
+            next unless old_counts[dim] > 0
+
+            old_counts[dim] -= 1
+            score += 1
+          end
+          score
         end
 
         def module_piece_signature(entry)
@@ -899,23 +961,25 @@ module BiraEstudio
           report = { added: [], removed: [], changed: [], skipped: [] }
 
           @modules.each do |entry|
-            uid = entry[:uid]
+            uid = entry[:uid].to_s
             entity = uid_map[uid]
+
+            # Fallback: entidad aún referenciada en esta sesión
+            if !(entity && entity.valid?)
+              entity = (@scanned_entities || []).find do |candidate|
+                candidate.valid? && entity_uid(candidate) == uid
+              end
+              if entity && entity.valid?
+                uid_map[uid] = entity
+              end
+            end
 
             unless entity && entity.valid?
               report[:skipped] << { module_name: entry[:name], reason: 'grupo no encontrado en el modelo (se conservan los datos guardados)' }
               next
             end
 
-            begin
-              repair_duplicate_piece_uids!(entry)
-              assign_missing_entity_piece_uids(entity, entry)
-            rescue StandardError => e
-              puts "Despiece PRO refresh: error asignando uids en #{entry[:name]} - #{e.class}: #{e.message}"
-              report[:skipped] << { module_name: entry[:name], reason: "error al asignar uids: #{e.message}" }
-              next
-            end
-
+            # 1) Re-escanear geometría REAL del modelo (fuente de verdad para count/dims/color)
             begin
               pieces = scanner.collect_pieces(entity)
               new_grouped = scanner.group_pieces_by_dimensions(pieces)
@@ -930,36 +994,94 @@ module BiraEstudio
               next
             end
 
-            old_keys = entry[:pieces].map { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) }
-            new_keys = new_grouped.map { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) }
+            # 2) Preparar/reparar uids sin abortar el refresh si falla
+            begin
+              repair_duplicate_piece_uids!(entry)
+              assign_missing_entity_piece_uids(entity, entry)
+              # Reagrupar tras estampar uids en entidades para que new_grouped lleve uids estables
+              pieces = scanner.collect_pieces(entity)
+              new_grouped = scanner.group_pieces_by_dimensions(pieces)
+            rescue StandardError => e
+              puts "Despiece PRO refresh: error asignando uids en #{entry[:name]} - #{e.class}: #{e.message}"
+              # Continuar con new_grouped del primer escaneo: la geometría ya es la del modelo.
+            end
 
-            added_keys = new_keys - old_keys
-            removed_keys = old_keys - new_keys
-            changed_keys = (old_keys & new_keys).select do |k|
-              old_p = entry[:pieces].find { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) == k }
-              new_p = new_grouped.find { |p| dim_key_no_color(p[:length], p[:width], p[:thickness]) == k }
-              old_p && new_p && old_p[:count] != new_p[:count]
+            if new_grouped.empty?
+              report[:skipped] << { module_name: entry[:name], reason: 'sin piezas detectadas tras asignar uids (se conservan los datos guardados)' }
+              next
+            end
+
+            old_full_keys = entry[:pieces].map do |p|
+              piece_dim_key(p[:length], p[:width], p[:thickness], p[:color] || '#FFFFFF')
+            end
+            new_full_keys = new_grouped.map do |p|
+              piece_dim_key(p[:length], p[:width], p[:thickness], p[:color] || '#FFFFFF')
+            end
+
+            # Cambios por dimensión (ignora color): count o color distintos
+            changed_items = []
+            old_by_dim = {}
+            entry[:pieces].each do |p|
+              key = dim_key_no_color(p[:length], p[:width], p[:thickness])
+              old_by_dim[key] ||= []
+              old_by_dim[key] << p
+            end
+            new_by_dim = {}
+            new_grouped.each do |p|
+              key = dim_key_no_color(p[:length], p[:width], p[:thickness])
+              new_by_dim[key] ||= []
+              new_by_dim[key] << p
+            end
+
+            dim_keys_changed = {}
+            (old_by_dim.keys & new_by_dim.keys).each do |dim_key|
+              old_list = old_by_dim[dim_key]
+              new_list = new_by_dim[dim_key]
+              old_count = old_list.inject(0) { |sum, p| sum + p[:count].to_i }
+              new_count = new_list.inject(0) { |sum, p| sum + p[:count].to_i }
+              old_colors = old_list.map { |p| (p[:color] || '#FFFFFF').to_s.strip.upcase }.uniq.sort
+              new_colors = new_list.map { |p| (p[:color] || '#FFFFFF').to_s.strip.upcase }.uniq.sort
+              next if old_count == new_count && old_colors == new_colors
+
+              dim_keys_changed[dim_key] = true
+              changed_items << [old_list.first, new_list.first]
+            end
+
+            added_keys = (new_full_keys - old_full_keys).uniq.reject do |k|
+              parts = k.to_s.split(',')
+              dim_keys_changed[parts[0..2].join(',')]
+            end
+            removed_keys = (old_full_keys - new_full_keys).uniq.reject do |k|
+              parts = k.to_s.split(',')
+              dim_keys_changed[parts[0..2].join(',')]
             end
 
             added_keys.each do |k|
-              p = new_grouped.find { |np| dim_key_no_color(np[:length], np[:width], np[:thickness]) == k }
+              p = new_grouped.find do |np|
+                piece_dim_key(np[:length], np[:width], np[:thickness], np[:color] || '#FFFFFF') == k
+              end
+              next unless p
+
               name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:added] << { module_name: entry[:name], piece: p, name: name }
             end
 
             removed_keys.each do |k|
-              p = entry[:pieces].find { |op| dim_key_no_color(op[:length], op[:width], op[:thickness]) == k }
+              p = entry[:pieces].find do |op|
+                piece_dim_key(op[:length], op[:width], op[:thickness], op[:color] || '#FFFFFF') == k
+              end
+              next unless p
+
               name = (entry[:piece_names] || {})[p[:uid].to_s].to_s
               report[:removed] << { module_name: entry[:name], piece: p, name: name }
             end
 
-            changed_keys.each do |k|
-              old_p = entry[:pieces].find { |op| dim_key_no_color(op[:length], op[:width], op[:thickness]) == k }
-              new_p = new_grouped.find { |np| dim_key_no_color(np[:length], np[:width], np[:thickness]) == k }
+            changed_items.each do |old_p, new_p|
               name = (entry[:piece_names] || {})[old_p[:uid].to_s].to_s
               report[:changed] << { module_name: entry[:name], old: old_p, new: new_p, name: name }
             end
 
+            # 3) Geometria viva + metadata de usuario (nombres/cantos/invertida) por uid
             old_pieces = entry[:pieces].map(&:dup)
             entry[:pieces] = reconcile_pieces_metadata!(entry, old_pieces, new_grouped)
           end
@@ -1765,11 +1887,17 @@ module BiraEstudio
 
           unless changed.empty?
             lines << '' unless lines.empty?
-            lines << "CANTIDAD CAMBIADA (#{changed.length}):"
+            lines << "PIEZAS ACTUALIZADAS (#{changed.length}):"
             changed.each do |item|
-              dim = "#{item[:old][:length]}x#{item[:old][:width]}x#{item[:old][:thickness]}mm"
-              name = item[:name].empty? ? dim : "#{item[:name]} (#{dim})"
-              lines << "  ~ #{item[:module_name]}: #{name} #{item[:old][:count]}x → #{item[:new][:count]}x"
+              dim_old = "#{item[:old][:length]}x#{item[:old][:width]}x#{item[:old][:thickness]}mm"
+              dim_new = "#{item[:new][:length]}x#{item[:new][:width]}x#{item[:new][:thickness]}mm"
+              name = item[:name].empty? ? dim_old : "#{item[:name]} (#{dim_old})"
+              color_note = ''
+              old_c = (item[:old][:color] || '').to_s.strip.upcase
+              new_c = (item[:new][:color] || '').to_s.strip.upcase
+              color_note = " color #{old_c}→#{new_c}" if !old_c.empty? && old_c != new_c
+              lines << "  ~ #{item[:module_name]}: #{name} #{item[:old][:count]}x → #{item[:new][:count]}x#{color_note}"
+              lines << "      dims: #{dim_old} → #{dim_new}" if dim_old != dim_new
             end
           end
 
