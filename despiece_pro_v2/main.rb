@@ -1470,7 +1470,11 @@ module BiraEstudio
             return
           end
 
-          default_name = formato.to_s == 'cortecloud' ? 'despiece_cortecloud.xlsx' : 'despiece.xlsx'
+          default_name = case formato.to_s
+                         when 'cortecloud' then 'despiece_cortecloud.xlsx'
+                         when 'maderamerica' then 'despiece_maderamerica.xlsx'
+                         else 'despiece.xlsx'
+                         end
           path = UI.savepanel('Guardar Excel', '', default_name)
           return unless path
 
@@ -1500,7 +1504,11 @@ module BiraEstudio
             return false
           end
 
-          script_name = formato.to_s == 'cortecloud' ? 'export_cortecloud.py' : 'export_excel.py'
+          script_name = case formato.to_s
+                        when 'cortecloud' then 'export_cortecloud.py'
+                        when 'maderamerica' then 'export_maderamerica.py'
+                        else 'export_excel.py'
+                        end
           script = File.join(PLUGIN_DIR, script_name)
           unless File.exist?(script)
             @last_error = "No se encontro el script: #{script}"
